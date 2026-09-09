@@ -1,0 +1,18 @@
+# fly.toml — конфиг для деплоя на Fly.io
+# https://fly.io/docs/reference/configuration/
+
+app = "softline-bot"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 0
+
+[env]
+  LOG_LEVEL = "INFO"

@@ -1,0 +1,23 @@
+# Telegram Bot
+aiogram==3.31.0
+
+# Environment variables
+python-dotenv==1.2.3
+
+# AI / LLM
+gigachat==0.2.3
+
+# Voice
+edge-tts==7.2.8
+pydub==0.25.1
+SpeechRecognition==3.17.0
+gTTS==2.5.4
+
+# PDF
+fpdf2==2.8.8
+
+# Database
+aiosqlite==0.22.1
+
+# Utils
+aiofiles==25.1.0

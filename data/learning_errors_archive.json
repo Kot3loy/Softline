@@ -1,0 +1,673 @@
+{
+  "999999": {
+    "university": {
+      "test_case_1": {
+        "attempts": 4,
+        "total_score": 26,
+        "errors": [
+          {
+            "score": 5,
+            "attempt": 1
+          },
+          {
+            "score": 5,
+            "attempt": 3
+          }
+        ]
+      },
+      "test_case_2": {
+        "attempts": 2,
+        "total_score": 8,
+        "errors": [
+          {
+            "score": 4,
+            "attempt": 1
+          },
+          {
+            "score": 4,
+            "attempt": 2
+          }
+        ]
+      }
+    }
+  },
+  "6796336566": {
+    "job": {
+      "job_1": {
+        "attempts": 1,
+        "total_score": 7,
+        "errors": []
+      },
+      "job_2": {
+        "attempts": 2,
+        "total_score": 9,
+        "errors": [
+          {
+            "score": 2,
+            "attempt": 2
+          }
+        ]
+      }
+    }
+  },
+  "999999999": {
+    "university": {
+      "test_case_1": {
+        "attempts": 74,
+        "total_score": 481,
+        "errors": [
+          {
+            "score": 5,
+            "attempt": 1
+          },
+          {
+            "score": 5,
+            "attempt": 3
+          },
+          {
+            "score": 5,
+            "attempt": 5
+          },
+          {
+            "score": 5,
+            "attempt": 7
+          },
+          {
+            "score": 5,
+            "attempt": 9
+          },
+          {
+            "score": 5,
+            "attempt": 11
+          },
+          {
+            "score": 5,
+            "attempt": 13
+          },
+          {
+            "score": 5,
+            "attempt": 15
+          },
+          {
+            "score": 5,
+            "attempt": 17
+          },
+          {
+            "score": 5,
+            "attempt": 19
+          },
+          {
+            "score": 5,
+            "attempt": 21
+          },
+          {
+            "score": 5,
+            "attempt": 23
+          },
+          {
+            "score": 5,
+            "attempt": 25
+          },
+          {
+            "score": 5,
+            "attempt": 27
+          },
+          {
+            "score": 5,
+            "attempt": 29
+          },
+          {
+            "score": 5,
+            "attempt": 31
+          },
+          {
+            "score": 5,
+            "attempt": 33
+          },
+          {
+            "score": 5,
+            "attempt": 35
+          },
+          {
+            "score": 5,
+            "attempt": 37
+          },
+          {
+            "score": 5,
+            "attempt": 39
+          },
+          {
+            "score": 5,
+            "attempt": 41
+          },
+          {
+            "score": 5,
+            "attempt": 43
+          },
+          {
+            "score": 5,
+            "attempt": 45
+          },
+          {
+            "score": 5,
+            "attempt": 47
+          },
+          {
+            "score": 5,
+            "attempt": 49
+          },
+          {
+            "score": 5,
+            "attempt": 51
+          },
+          {
+            "score": 5,
+            "attempt": 53
+          },
+          {
+            "score": 5,
+            "attempt": 55
+          },
+          {
+            "score": 5,
+            "attempt": 57
+          },
+          {
+            "score": 5,
+            "attempt": 59
+          },
+          {
+            "score": 5,
+            "attempt": 61
+          },
+          {
+            "score": 5,
+            "attempt": 63
+          },
+          {
+            "score": 5,
+            "attempt": 65
+          },
+          {
+            "score": 5,
+            "attempt": 67
+          },
+          {
+            "score": 5,
+            "attempt": 69
+          },
+          {
+            "score": 5,
+            "attempt": 71
+          },
+          {
+            "score": 5,
+            "attempt": 73
+          }
+        ]
+      },
+      "test_case_2": {
+        "attempts": 37,
+        "total_score": 148,
+        "errors": [
+          {
+            "score": 4,
+            "attempt": 1
+          },
+          {
+            "score": 4,
+            "attempt": 2
+          },
+          {
+            "score": 4,
+            "attempt": 3
+          },
+          {
+            "score": 4,
+            "attempt": 4
+          },
+          {
+            "score": 4,
+            "attempt": 5
+          },
+          {
+            "score": 4,
+            "attempt": 6
+          },
+          {
+            "score": 4,
+            "attempt": 7
+          },
+          {
+            "score": 4,
+            "attempt": 8
+          },
+          {
+            "score": 4,
+            "attempt": 9
+          },
+          {
+            "score": 4,
+            "attempt": 10
+          },
+          {
+            "score": 4,
+            "attempt": 11
+          },
+          {
+            "score": 4,
+            "attempt": 12
+          },
+          {
+            "score": 4,
+            "attempt": 13
+          },
+          {
+            "score": 4,
+            "attempt": 14
+          },
+          {
+            "score": 4,
+            "attempt": 15
+          },
+          {
+            "score": 4,
+            "attempt": 16
+          },
+          {
+            "score": 4,
+            "attempt": 17
+          },
+          {
+            "score": 4,
+            "attempt": 18
+          },
+          {
+            "score": 4,
+            "attempt": 19
+          },
+          {
+            "score": 4,
+            "attempt": 20
+          },
+          {
+            "score": 4,
+            "attempt": 21
+          },
+          {
+            "score": 4,
+            "attempt": 22
+          },
+          {
+            "score": 4,
+            "attempt": 23
+          },
+          {
+            "score": 4,
+            "attempt": 24
+          },
+          {
+            "score": 4,
+            "attempt": 25
+          },
+          {
+            "score": 4,
+            "attempt": 26
+          },
+          {
+            "score": 4,
+            "attempt": 27
+          },
+          {
+            "score": 4,
+            "attempt": 28
+          },
+          {
+            "score": 4,
+            "attempt": 29
+          },
+          {
+            "score": 4,
+            "attempt": 30
+          },
+          {
+            "score": 4,
+            "attempt": 31
+          },
+          {
+            "score": 4,
+            "attempt": 32
+          },
+          {
+            "score": 4,
+            "attempt": 33
+          },
+          {
+            "score": 4,
+            "attempt": 34
+          },
+          {
+            "score": 4,
+            "attempt": 35
+          },
+          {
+            "score": 4,
+            "attempt": 36
+          },
+          {
+            "score": 4,
+            "attempt": 37
+          }
+        ]
+      },
+      "weak_case": {
+        "attempts": 37,
+        "total_score": 111,
+        "errors": [
+          {
+            "score": 3,
+            "attempt": 1
+          },
+          {
+            "score": 3,
+            "attempt": 2
+          },
+          {
+            "score": 3,
+            "attempt": 3
+          },
+          {
+            "score": 3,
+            "attempt": 4
+          },
+          {
+            "score": 3,
+            "attempt": 5
+          },
+          {
+            "score": 3,
+            "attempt": 6
+          },
+          {
+            "score": 3,
+            "attempt": 7
+          },
+          {
+            "score": 3,
+            "attempt": 8
+          },
+          {
+            "score": 3,
+            "attempt": 9
+          },
+          {
+            "score": 3,
+            "attempt": 10
+          },
+          {
+            "score": 3,
+            "attempt": 11
+          },
+          {
+            "score": 3,
+            "attempt": 12
+          },
+          {
+            "score": 3,
+            "attempt": 13
+          },
+          {
+            "score": 3,
+            "attempt": 14
+          },
+          {
+            "score": 3,
+            "attempt": 15
+          },
+          {
+            "score": 3,
+            "attempt": 16
+          },
+          {
+            "score": 3,
+            "attempt": 17
+          },
+          {
+            "score": 3,
+            "attempt": 18
+          },
+          {
+            "score": 3,
+            "attempt": 19
+          },
+          {
+            "score": 3,
+            "attempt": 20
+          },
+          {
+            "score": 3,
+            "attempt": 21
+          },
+          {
+            "score": 3,
+            "attempt": 22
+          },
+          {
+            "score": 3,
+            "attempt": 23
+          },
+          {
+            "score": 3,
+            "attempt": 24
+          },
+          {
+            "score": 3,
+            "attempt": 25
+          },
+          {
+            "score": 3,
+            "attempt": 26
+          },
+          {
+            "score": 3,
+            "attempt": 27
+          },
+          {
+            "score": 3,
+            "attempt": 28
+          },
+          {
+            "score": 3,
+            "attempt": 29
+          },
+          {
+            "score": 3,
+            "attempt": 30
+          },
+          {
+            "score": 3,
+            "attempt": 31
+          },
+          {
+            "score": 3,
+            "attempt": 32
+          },
+          {
+            "score": 3,
+            "attempt": 33
+          },
+          {
+            "score": 3,
+            "attempt": 34
+          },
+          {
+            "score": 3,
+            "attempt": 35
+          },
+          {
+            "score": 3,
+            "attempt": 36
+          },
+          {
+            "score": 3,
+            "attempt": 37
+          }
+        ]
+      },
+      "rec_case": {
+        "attempts": 37,
+        "total_score": 74,
+        "errors": [
+          {
+            "score": 2,
+            "attempt": 1
+          },
+          {
+            "score": 2,
+            "attempt": 2
+          },
+          {
+            "score": 2,
+            "attempt": 3
+          },
+          {
+            "score": 2,
+            "attempt": 4
+          },
+          {
+            "score": 2,
+            "attempt": 5
+          },
+          {
+            "score": 2,
+            "attempt": 6
+          },
+          {
+            "score": 2,
+            "attempt": 7
+          },
+          {
+            "score": 2,
+            "attempt": 8
+          },
+          {
+            "score": 2,
+            "attempt": 9
+          },
+          {
+            "score": 2,
+            "attempt": 10
+          },
+          {
+            "score": 2,
+            "attempt": 11
+          },
+          {
+            "score": 2,
+            "attempt": 12
+          },
+          {
+            "score": 2,
+            "attempt": 13
+          },
+          {
+            "score": 2,
+            "attempt": 14
+          },
+          {
+            "score": 2,
+            "attempt": 15
+          },
+          {
+            "score": 2,
+            "attempt": 16
+          },
+          {
+            "score": 2,
+            "attempt": 17
+          },
+          {
+            "score": 2,
+            "attempt": 18
+          },
+          {
+            "score": 2,
+            "attempt": 19
+          },
+          {
+            "score": 2,
+            "attempt": 20
+          },
+          {
+            "score": 2,
+            "attempt": 21
+          },
+          {
+            "score": 2,
+            "attempt": 22
+          },
+          {
+            "score": 2,
+            "attempt": 23
+          },
+          {
+            "score": 2,
+            "attempt": 24
+          },
+          {
+            "score": 2,
+            "attempt": 25
+          },
+          {
+            "score": 2,
+            "attempt": 26
+          },
+          {
+            "score": 2,
+            "attempt": 27
+          },
+          {
+            "score": 2,
+            "attempt": 28
+          },
+          {
+            "score": 2,
+            "attempt": 29
+          },
+          {
+            "score": 2,
+            "attempt": 30
+          },
+          {
+            "score": 2,
+            "attempt": 31
+          },
+          {
+            "score": 2,
+            "attempt": 32
+          },
+          {
+            "score": 2,
+            "attempt": 33
+          },
+          {
+            "score": 2,
+            "attempt": 34
+          },
+          {
+            "score": 2,
+            "attempt": 35
+          },
+          {
+            "score": 2,
+            "attempt": 36
+          },
+          {
+            "score": 2,
+            "attempt": 37
+          }
+        ]
+      }
+    }
+  }
+}

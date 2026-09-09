@@ -1,0 +1,206 @@
+{
+  "999999999": {
+    "university": {
+      "test_case_1": {
+        "attempts": 22,
+        "total_score": 143,
+        "errors": [
+          {
+            "score": 5,
+            "attempt": 1
+          },
+          {
+            "score": 5,
+            "attempt": 3
+          },
+          {
+            "score": 5,
+            "attempt": 5
+          },
+          {
+            "score": 5,
+            "attempt": 7
+          },
+          {
+            "score": 5,
+            "attempt": 9
+          },
+          {
+            "score": 5,
+            "attempt": 11
+          },
+          {
+            "score": 5,
+            "attempt": 13
+          },
+          {
+            "score": 5,
+            "attempt": 15
+          },
+          {
+            "score": 5,
+            "attempt": 17
+          },
+          {
+            "score": 5,
+            "attempt": 19
+          },
+          {
+            "score": 5,
+            "attempt": 21
+          }
+        ]
+      },
+      "test_case_2": {
+        "attempts": 11,
+        "total_score": 44,
+        "errors": [
+          {
+            "score": 4,
+            "attempt": 1
+          },
+          {
+            "score": 4,
+            "attempt": 2
+          },
+          {
+            "score": 4,
+            "attempt": 3
+          },
+          {
+            "score": 4,
+            "attempt": 4
+          },
+          {
+            "score": 4,
+            "attempt": 5
+          },
+          {
+            "score": 4,
+            "attempt": 6
+          },
+          {
+            "score": 4,
+            "attempt": 7
+          },
+          {
+            "score": 4,
+            "attempt": 8
+          },
+          {
+            "score": 4,
+            "attempt": 9
+          },
+          {
+            "score": 4,
+            "attempt": 10
+          },
+          {
+            "score": 4,
+            "attempt": 11
+          }
+        ]
+      },
+      "weak_case": {
+        "attempts": 11,
+        "total_score": 33,
+        "errors": [
+          {
+            "score": 3,
+            "attempt": 1
+          },
+          {
+            "score": 3,
+            "attempt": 2
+          },
+          {
+            "score": 3,
+            "attempt": 3
+          },
+          {
+            "score": 3,
+            "attempt": 4
+          },
+          {
+            "score": 3,
+            "attempt": 5
+          },
+          {
+            "score": 3,
+            "attempt": 6
+          },
+          {
+            "score": 3,
+            "attempt": 7
+          },
+          {
+            "score": 3,
+            "attempt": 8
+          },
+          {
+            "score": 3,
+            "attempt": 9
+          },
+          {
+            "score": 3,
+            "attempt": 10
+          },
+          {
+            "score": 3,
+            "attempt": 11
+          }
+        ]
+      },
+      "rec_case": {
+        "attempts": 11,
+        "total_score": 22,
+        "errors": [
+          {
+            "score": 2,
+            "attempt": 1
+          },
+          {
+            "score": 2,
+            "attempt": 2
+          },
+          {
+            "score": 2,
+            "attempt": 3
+          },
+          {
+            "score": 2,
+            "attempt": 4
+          },
+          {
+            "score": 2,
+            "attempt": 5
+          },
+          {
+            "score": 2,
+            "attempt": 6
+          },
+          {
+            "score": 2,
+            "attempt": 7
+          },
+          {
+            "score": 2,
+            "attempt": 8
+          },
+          {
+            "score": 2,
+            "attempt": 9
+          },
+          {
+            "score": 2,
+            "attempt": 10
+          },
+          {
+            "score": 2,
+            "attempt": 11
+          }
+        ]
+      }
+    }
+  }
+}
