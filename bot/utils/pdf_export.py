@@ -61,8 +61,23 @@ def generate_report(user_id: int, scenario: str, results: list, case_answers: li
             break
 
     if not font_path:
-        logger.warning("Шрифт не найден, PDF может отображаться некорректно")
-        font_path = Path(font_paths[0])
+        logger.warning("Шрифт не найден, пробуем встроенный шрифт FPDF")
+        # Если шрифт не найден — используем встроенный шрифт FPDF (latin-1)
+        # Кириллица может отображаться некорректно, но PDF не крашнется
+        pdf = PDFReport()
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, "Report", align="C")
+        pdf.ln(10)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.multi_cell(0, 7, "Font not found. Install DejaVu Sans for proper Russian text rendering.")
+        import time
+        output_dir = config.DATA_DIR / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = int(time.time())
+        output_path = output_dir / f"report_{user_id}_{scenario}_{timestamp}.pdf"
+        pdf.output(str(output_path))
+        return str(output_path)
 
     pdf = PDFReport()
     pdf.add_font("DejaVu", "", str(font_path), uni=True)

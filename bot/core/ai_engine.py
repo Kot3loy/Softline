@@ -6,13 +6,15 @@ import logging
 import json
 import re
 import time
+import asyncio
 from gigachat import GigaChatAsyncClient
 from gigachat.models import ChatCompletionRequest, ChatMessage
 from bot.config import config
 
 logger = logging.getLogger(__name__)
 
-_client = None  # ну тут хранится клиент, если None — значит ещё не подключались
+_client = None
+_client_lock = asyncio.Lock()
 
 # Хранилище последних ответов
 _last_responses = {}  # type: dict[int, list[str]]
@@ -61,6 +63,13 @@ def _sanitize_input(text: str) -> str:
         r'new\s+instructions:',
         r'system\s*:\s*',
         r'assistant\s*:\s*',
+        # Русские паттерны
+        r'игнорируй\s+(вс[её]\s+)?предыдущие\s+инструкции',
+        r'забудь\s+(вс[её]\s+)?инструкции',
+        r'ты\s+теперь',
+        r'новые\s+инструкции:',
+        r'прими\s+во\s+внимание\s+что',
+        r'в\s+качестве\s+системы',
     ]
     for pattern in dangerous_patterns:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
@@ -70,9 +79,6 @@ def _sanitize_input(text: str) -> str:
 
 def _cleanup_old_data():
     """Очистить устаревшие данные (вызывать периодически)"""
-    # TODO: наверное надо вызывать это не каждые 10 запросов а по таймеру,
-    #       но пока работает и ладно
-    now = time.time()
     now = time.time()
 
     # Очистка _last_responses
@@ -91,19 +97,20 @@ def _cleanup_old_data():
 async def _get_client():
     """Ленивая инициализация GigaChat async-клиента"""
     global _client
-    if _client is None:
-        logger.info("Инициализация GigaChat клиента...")
-        _client = GigaChatAsyncClient(
-            credentials=config.GIGACHAT_CREDENTIALS,
-            model=config.GIGACHAT_MODEL,
-            verify_ssl_certs=config.GIGACHAT_VERIFY_SSL_CERTS,
-            timeout=90,
-            max_retries=3,
-            retry_backoff_factor=2,
-        )
-        await _client.__aenter__()
-        logger.info("GigaChat клиент готов")
-    return _client
+    async with _client_lock:
+        if _client is None:
+            logger.info("Инициализация GigaChat клиента...")
+            _client = GigaChatAsyncClient(
+                credentials=config.GIGACHAT_CREDENTIALS,
+                model=config.GIGACHAT_MODEL,
+                verify_ssl_certs=config.GIGACHAT_VERIFY_SSL_CERTS,
+                timeout=90,
+                max_retries=3,
+                retry_backoff_factor=2,
+            )
+            await _client.__aenter__()
+            logger.info("GigaChat клиент готов")
+        return _client
 
 
 STYLE = (

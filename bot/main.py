@@ -82,6 +82,15 @@ async def on_shutdown():
 async def on_error(event: ErrorEvent):
     """Глобальный обработчик ошибок"""
     logger.error(f"Ошибка в обработчике: {event.update}", exc_info=event.exception)
+    # Отправляем пользователю сообщение об ошибке
+    try:
+        update = event.update
+        if update.message:
+            await update.message.answer("❌ Произошла ошибка. Попробуй позже или начни заново через /start")
+        elif update.callback_query:
+            await update.callback_query.answer("❌ Произошла ошибка", show_alert=True)
+    except Exception:
+        pass
 
 
 def _setup_signals(loop):

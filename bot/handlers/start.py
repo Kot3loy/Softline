@@ -1,7 +1,10 @@
 """Хендлеры старта — приветствие, главное меню, настройки, команды."""
 
 import os
+import logging
 from aiogram import Router, F
+
+logger = logging.getLogger(__name__)
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.filters import CommandStart, Command, StateFilter
 
@@ -128,12 +131,15 @@ async def cmd_export(msg: Message):
             ] if case_answers else [
                 {"score": data["avg_score"], "feedback": "Средний балл по сценарию"}
             ]
-            report_path = generate_report(msg.from_user.id, scenario, results, case_answers)
-
-            await msg.answer_document(
-                FSInputFile(report_path),
-                caption=f"📄 Отчёт: {scenario}",
-            )
+            try:
+                report_path = generate_report(msg.from_user.id, scenario, results, case_answers)
+                await msg.answer_document(
+                    FSInputFile(report_path),
+                    caption=f"📄 Отчёт: {scenario}",
+                )
+            except Exception as e:
+                logger.error(f"Ошибка генерации PDF: {e}")
+                await msg.answer(f"❌ Не удалось сгенерировать отчёт для {scenario}")
 
     await msg.answer(
         "✅ Отчёт готов!\n\n"
@@ -230,12 +236,15 @@ async def fallback_handler(msg: Message):
         from bot.core.scenarios import answer_info_question
         answer = await answer_info_question(msg.text, scenario, user_id=user_id)
         voice_file = await text_to_speech(answer)
-        if voice_file:
-            await msg.answer_voice(FSInputFile(voice_file))
-            await msg.answer(f"📝 <b>Текст:</b>\n{answer}", parse_mode="HTML")
-            os.remove(voice_file)
-        else:
-            await msg.answer(answer, parse_mode="HTML")
+        try:
+            if voice_file:
+                await msg.answer_voice(FSInputFile(voice_file))
+                await msg.answer(f"📝 <b>Текст:</b>\n{answer}", parse_mode="HTML")
+            else:
+                await msg.answer(answer, parse_mode="HTML")
+        finally:
+            if voice_file and os.path.exists(voice_file):
+                os.remove(voice_file)
     else:
         await msg.answer(
             "🤔 Я не совсем понял.\n\n"

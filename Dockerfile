@@ -14,5 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем код
 COPY . .
 
-# Запуск
+# Запуск от непривилегированного пользователя
+RUN adduser --disabled-password --gecos "" appuser
+USER appuser
+
 CMD ["python", "-m", "bot.main"]

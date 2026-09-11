@@ -23,3 +23,7 @@ tests/
 data/learning_errors.json
 data/learning_errors_archive.json
 database/
+data/reports/
+Procfile
+runtime.txt
+fly.toml

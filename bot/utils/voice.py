@@ -4,6 +4,7 @@ import logging
 import re
 import tempfile
 import os
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -104,17 +105,21 @@ async def text_to_speech(text: str, lang: str = "ru", voice: str = None) -> str:
 
     try:
         import edge_tts
-        import asyncio
 
         tmp_file = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         tmp_path = tmp_file.name
         tmp_file.close()
 
-        communicate = edge_tts.Communicate(clean_text, voice)
-        await communicate.save(tmp_path)
-
-        logger.info(f"Голос сгенерирован (edge-tts, {voice}): {len(clean_text)} символов")
-        return tmp_path
+        try:
+            communicate = edge_tts.Communicate(clean_text, voice)
+            await communicate.save(tmp_path)
+            logger.info(f"Голос сгенерирован (edge-tts, {voice}): {len(clean_text)} символов")
+            return tmp_path
+        except Exception as e:
+            logger.error(f"Ошибка edge-tts: {e}")
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
 
     except Exception as e:
         logger.error(f"Ошибка edge-tts: {e}")
@@ -126,8 +131,10 @@ async def text_to_speech(text: str, lang: str = "ru", voice: str = None) -> str:
             def _generate():
                 tts = gTTS(text=clean_text, lang=lang, slow=False)
                 tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-                tts.save(tmp.name)
-                return tmp.name
+                tmp_path = tmp.name
+                tmp.close()
+                tts.save(tmp_path)
+                return tmp_path
 
             file_path = await loop.run_in_executor(None, _generate)
             logger.info(f"Голос сгенерирован (gTTS fallback): {file_path}")

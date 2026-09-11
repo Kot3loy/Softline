@@ -121,7 +121,7 @@ def _score(query_tokens: list, doc_tokens: list) -> float:
                 df = _doc_freq.get(token, 1)
                 idf = math.log(_total_docs / df) if df > 0 else 0
             else:
-                # Нет корпуса — IDF = log(总词数 / freq_in_doc)
+                # Нет корпуса — IDF = log(всего слов / freq_in_doc)
                 freq = doc_counter[token]
                 idf = math.log(doc_len / freq) if freq > 0 else 0
             score += tf * idf

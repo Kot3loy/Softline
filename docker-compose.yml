@@ -1,9 +1,7 @@
-version: "3.8"
-
 services:
   bot:
     build: .
-    container-name: softline-bot
+    container_name: softline-bot
     restart: unless-stopped
     env_file:
       - .env

@@ -1,4 +1,6 @@
 # fly.toml — конфиг для деплоя на Fly.io
+# NOTE: Настраивается как HTTP-сервис, но бот использует polling.
+# Если будет деплой на Fly.io — нужно переключить на long-polling или webhook.
 # https://fly.io/docs/reference/configuration/
 
 app = "softline-bot"

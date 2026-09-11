@@ -1,5 +1,7 @@
 """Хендлер информационного режима — диалог с AI по выбранному сценарию."""
 
+import os
+import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.context import FSMContext
@@ -9,6 +11,8 @@ from bot.utils.keyboards import back_to_menu_kb
 from bot.utils.voice import text_to_speech
 from bot.core.scenarios import answer_info_question, get_welcome_message
 from bot.database.db import update_user, get_or_create_user
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -65,11 +69,13 @@ async def handle_text_message(msg: Message, state: FSMContext):
 
     if voice_enabled:
         voice_file = await text_to_speech(answer)
-        if voice_file:
-            await msg.answer_voice(FSInputFile(voice_file))
-            await msg.answer(f"📝 <b>Текст:</b>\n{answer}\n\n{DISCLAIMER}", parse_mode="HTML")
-            import os
-            os.remove(voice_file)
-            return
+        try:
+            if voice_file:
+                await msg.answer_voice(FSInputFile(voice_file))
+                await msg.answer(f"📝 <b>Текст:</b>\n{answer}\n\n{DISCLAIMER}", parse_mode="HTML")
+                return
+        finally:
+            if voice_file and os.path.exists(voice_file):
+                os.remove(voice_file)
 
     await msg.answer(f"{answer}\n\n{DISCLAIMER}", parse_mode="HTML")

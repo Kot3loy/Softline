@@ -1,6 +1,7 @@
 """Модуль работы с базой данных — singleton соединение, миграции, CRUD."""
 
 import logging
+import asyncio
 import aiosqlite
 from bot.config import config
 
@@ -8,20 +9,36 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = config.DATABASE_DIR / config.DATABASE_NAME
 _db: aiosqlite.Connection | None = None
+_db_lock = asyncio.Lock()
 _DB_VERSION = 2
 
 
 async def _get_db() -> aiosqlite.Connection:
     """Получить singleton соединение"""
     global _db
-    if _db is None:
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _db = await aiosqlite.connect(str(DB_PATH))
-        _db.row_factory = aiosqlite.Row
-        await _db.execute("PRAGMA foreign_keys = ON")
-        await _db.execute("PRAGMA journal_mode = WAL")
-        logger.info("Соединение с БД установлено")
-    return _db
+    async with _db_lock:
+        if _db is None:
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _db = await aiosqlite.connect(str(DB_PATH))
+            _db.row_factory = aiosqlite.Row
+            await _db.execute("PRAGMA foreign_keys = ON")
+            await _db.execute("PRAGMA journal_mode = WAL")
+            logger.info("Соединение с БД установлено")
+        return _db
+
+
+async def _execute_with_retry(coro_func, *args, retries=3, **kwargs):
+    """Выполнить SQL-запрос с retry при database is locked"""
+    for attempt in range(retries):
+        try:
+            db = await _get_db()
+            return await coro_func(db, *args, **kwargs)
+        except aiosqlite.OperationalError as e:
+            if "database is locked" in str(e) and attempt < retries - 1:
+                logger.warning(f"БД заблокирована, попытка {attempt + 1}/{retries}")
+                await asyncio.sleep(0.1 * (attempt + 1))
+            else:
+                raise
 
 
 async def close_db():

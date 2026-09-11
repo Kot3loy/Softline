@@ -161,7 +161,6 @@ async def cb_next_case(cb: CallbackQuery, state: FSMContext):
     session["current"] += 1
     current_idx = session["current"]
     if current_idx >= session["total"]:
-        await cb.answer("Все задания уже пройдены", show_alert=True)
         return
 
     case = session["cases"][current_idx]
@@ -260,7 +259,7 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
     if next_idx >= session["total"]:
-        avg_score = sum(session["scores"]) / len(session["scores"])
+        avg_score = sum(session["scores"]) / len(session["scores"]) if session["scores"] else 0
         await end_session(session["session_id"], len(session["scores"]), avg_score)
 
         recommendations = get_recommendations(user_id, session["scenario"])
@@ -283,6 +282,7 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
 
         await cb.message.answer(result_text, reply_markup=kb, parse_mode="HTML")
         await state.clear()
+        exam_sessions.pop(user_id, None)
     else:
         next_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="▶ Следующее задание", callback_data="next_case")]
@@ -324,7 +324,6 @@ async def cb_show_results(cb: CallbackQuery, state: FSMContext):
 
     text += EXAM_DISCLAIMER
 
-    from bot.utils.keyboards import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 Экспорт в PDF", callback_data="export_pdf")],
         [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")],
@@ -435,7 +434,7 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
     next_idx = current_idx + 1
 
     if next_idx >= session["total"]:
-        avg_score = sum(session["scores"]) / len(session["scores"])
+        avg_score = sum(session["scores"]) / len(session["scores"]) if session["scores"] else 0
         await end_session(session["session_id"], len(session["scores"]), avg_score)
 
         weak_areas = get_weak_areas(user_id, session["scenario"])
@@ -459,6 +458,7 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
 
         await msg.answer(result_text, reply_markup=kb, parse_mode="HTML")
         await state.clear()
+        exam_sessions.pop(user_id, None)
     else:
         next_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="▶ Следующее задание", callback_data="next_case")]
