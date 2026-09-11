@@ -2,8 +2,8 @@
   "999999999": {
     "university": {
       "test_case_1": {
-        "attempts": 24,
-        "total_score": 156,
+        "attempts": 26,
+        "total_score": 169,
         "errors": [
           {
             "score": 5,
@@ -52,12 +52,16 @@
           {
             "score": 5,
             "attempt": 23
+          },
+          {
+            "score": 5,
+            "attempt": 25
           }
         ]
       },
       "test_case_2": {
-        "attempts": 12,
-        "total_score": 48,
+        "attempts": 13,
+        "total_score": 52,
         "errors": [
           {
             "score": 4,
@@ -106,12 +110,16 @@
           {
             "score": 4,
             "attempt": 12
+          },
+          {
+            "score": 4,
+            "attempt": 13
           }
         ]
       },
       "weak_case": {
-        "attempts": 12,
-        "total_score": 36,
+        "attempts": 13,
+        "total_score": 39,
         "errors": [
           {
             "score": 3,
@@ -160,12 +168,16 @@
           {
             "score": 3,
             "attempt": 12
+          },
+          {
+            "score": 3,
+            "attempt": 13
           }
         ]
       },
       "rec_case": {
-        "attempts": 12,
-        "total_score": 24,
+        "attempts": 13,
+        "total_score": 26,
         "errors": [
           {
             "score": 2,
@@ -214,6 +226,10 @@
           {
             "score": 2,
             "attempt": 12
+          },
+          {
+            "score": 2,
+            "attempt": 13
           }
         ]
       }

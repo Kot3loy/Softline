@@ -1,9 +1,11 @@
-"""Главный модуль бота — инициализация и запуск polling."""
+"""Главный модуль бота — инициализация и запуск polling + health endpoint для Render."""
 
 import asyncio
 import logging
 import signal
 import sys
+import os
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.types import ErrorEvent
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -30,6 +32,26 @@ logging.getLogger("gigachat").setLevel(logging.WARNING)
 _bot: Bot = None
 _dp: Dispatcher = None
 _shutdown_event = asyncio.Event()
+_web_runner = None
+
+
+async def health_handler(request):
+    """Health endpoint для Render / внешних пингеров"""
+    return web.json_response({"status": "ok"})
+
+
+async def start_web_server():
+    """Запуск微型 HTTP-сервера для health checks"""
+    global _web_runner
+    app = web.Application()
+    app.router.add_get("/health", health_handler)
+    app.router.add_get("/", health_handler)
+    _web_runner = web.AppRunner(app)
+    await _web_runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(_web_runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"Health-сервер запущен на порту {port}")
 
 
 async def on_startup():
@@ -41,9 +63,16 @@ async def on_startup():
 
 async def on_shutdown():
     """Действия при остановке бота"""
-    global _bot, _dp
+    global _bot, _dp, _web_runner
 
     logger.info("Завершение работы...")
+
+    # Закрываем health-сервер
+    if _web_runner:
+        try:
+            await _web_runner.cleanup()
+        except Exception:
+            pass
 
     # Закрываем GigaChat клиент
     try:
@@ -111,6 +140,7 @@ async def main():
 
     validate_config()
     await on_startup()
+    await start_web_server()
 
     _bot = Bot(token=config.BOT_TOKEN)
     storage = MemoryStorage()
