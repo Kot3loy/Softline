@@ -1,18 +1,16 @@
-name: Deploy to Fly.io
+name: Deploy to Render (manual)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
-  deploy:
+  render-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - run: flyctl deploy --remote-only
+      # Render автоматически деплоит из GitHub при подключении репо через веб-интерфейс.
+      # Этот workflow просто подтверждает, что код готов к деплою.
+      - run: echo "📦 Code ready for Render deployment"
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
