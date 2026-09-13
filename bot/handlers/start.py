@@ -2,6 +2,7 @@
 
 import os
 import logging
+import asyncio
 from aiogram import Router, F
 
 logger = logging.getLogger(__name__)
@@ -10,6 +11,7 @@ from aiogram.filters import CommandStart, Command, StateFilter
 
 from bot.utils.keyboards import main_menu_kb, scenario_info_kb, settings_kb
 from bot.utils.voice import text_to_speech
+from bot.core.ai_engine import _sanitize_input
 from bot.database.db import get_or_create_user, get_user_stats, update_user
 
 router = Router()
@@ -122,6 +124,7 @@ async def cmd_export(msg: Message):
 
     await msg.answer("📥 Генерирую отчёт...")
 
+    success_count = 0
     for scenario, data in stats["scenarios"].items():
         if data["sessions"] > 0:
             case_answers = await get_case_answers(msg.from_user.id, scenario)
@@ -132,20 +135,30 @@ async def cmd_export(msg: Message):
                 {"score": data["avg_score"], "feedback": "Средний балл по сценарию"}
             ]
             try:
-                report_path = generate_report(msg.from_user.id, scenario, results, case_answers)
+                report_path = await asyncio.to_thread(
+                    generate_report, msg.from_user.id, scenario, results, case_answers
+                )
                 await msg.answer_document(
                     FSInputFile(report_path),
                     caption=f"📄 Отчёт: {scenario}",
                 )
+                success_count += 1
+                # Удаляем PDF после отправки
+                try:
+                    if os.path.exists(report_path):
+                        os.remove(report_path)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.error(f"Ошибка генерации PDF: {e}")
                 await msg.answer(f"❌ Не удалось сгенерировать отчёт для {scenario}")
 
-    await msg.answer(
-        "✅ Отчёт готов!\n\n"
-        "⚠️ Рекомендации носят информационный характер и не заменяют "
-        "официальные требования вузов и работодателей."
-    )
+    if success_count > 0:
+        await msg.answer(
+            "✅ Отчёт готов!\n\n"
+            "⚠️ Рекомендации носят информационный характер и не заменяют "
+            "официальные требования вузов и работодателей."
+        )
 
 
 @router.message(F.text == "🎓 Выбор вуза")
@@ -187,7 +200,11 @@ async def btn_adaptation(msg: Message):
 @router.callback_query(F.data == "back_to_menu")
 async def cb_back_to_menu(cb: CallbackQuery):
     """Возврат в главное меню"""
-    await cb.message.edit_text(WELCOME, reply_markup=None, parse_mode="HTML")
+    try:
+        await cb.message.edit_text(WELCOME, reply_markup=None, parse_mode="HTML")
+    except Exception:
+        # Если edit_text не работает (не-text сообщение) — отправляем новое
+        pass
     await cb.message.answer("Выбери сценарий:", reply_markup=main_menu_kb())
     await cb.answer()
 
@@ -234,7 +251,8 @@ async def fallback_handler(msg: Message):
     if voice_enabled:
         await msg.bot.send_chat_action(msg.chat.id, "typing")
         from bot.core.scenarios import answer_info_question
-        answer = await answer_info_question(msg.text, scenario, user_id=user_id)
+        clean_text = _sanitize_input(msg.text)
+        answer = await answer_info_question(clean_text, scenario, user_id=user_id)
         voice_file = await text_to_speech(answer)
         try:
             if voice_file:

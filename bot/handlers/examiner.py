@@ -1,6 +1,7 @@
 """Хендлер режима экзаменатора — генерация и оценка заданий."""
 
 import time
+import asyncio
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -20,12 +21,6 @@ EXAM_DISCLAIMER = (
 )
 
 SESSION_TTL = 1800  # 30 минут
-
-# старый вариант — сначала я делал через FSM и состояния,
-# но потом переделал на inline кнопки, так проще оказалось
-# class ExamFSM(StatesGroup):
-#     waiting_for_answer = State()
-#     confirm_answer = State()
 
 
 def pluralize(n: int, one: str, few: str, many: str) -> str:
@@ -48,15 +43,22 @@ class ExamState(StatesGroup):
 
 
 # Сессии экзамена (в памяти)
+MAX_EXAM_SESSIONS = 1000  # максимум сессий одновременно
 exam_sessions = {}  # user_id -> {scenario, cases, current, session_id, answers, timestamp}
 
 
 def _cleanup_expired_sessions():
-    """Удалить сессии старше SESSION_TTL"""
+    """Удалить сессии старше SESSION_TTL или при превышении лимита"""
     now = time.time()
     expired = [uid for uid, s in exam_sessions.items() if now - s.get("timestamp", 0) > SESSION_TTL]
     for uid in expired:
         del exam_sessions[uid]
+    # Если всё ещё слишком много — удаляем самые старые
+    if len(exam_sessions) > MAX_EXAM_SESSIONS:
+        sorted_sessions = sorted(exam_sessions.items(), key=lambda x: x[1].get("timestamp", 0))
+        to_remove = len(exam_sessions) - MAX_EXAM_SESSIONS
+        for uid, _ in sorted_sessions[:to_remove]:
+            del exam_sessions[uid]
 
 
 @router.callback_query(F.data.startswith("exam_"))
@@ -236,7 +238,7 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
     session["scores"].append(score)
 
     case_id = f"{session['scenario']}_{current_idx + 1}"
-    record_error(user_id, case_id, session["scenario"], score)
+    await asyncio.to_thread(record_error, user_id, case_id, session["scenario"], score)
 
     await save_case_answer(
         session_id=session["session_id"],
@@ -260,7 +262,9 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
 
     if next_idx >= session["total"]:
         avg_score = sum(session["scores"]) / len(session["scores"]) if session["scores"] else 0
-        await end_session(session["session_id"], len(session["scores"]), avg_score)
+        if not session.get("_ended"):
+            await end_session(session["session_id"], len(session["scores"]), avg_score)
+            session["_ended"] = True
 
         recommendations = get_recommendations(user_id, session["scenario"])
 
@@ -307,8 +311,9 @@ async def cb_show_results(cb: CallbackQuery, state: FSMContext):
     total = session["total"]
     avg_score = sum(session["scores"]) / len(session["scores"]) if session["scores"] else 0
 
-    if session.get("session_id"):
+    if session.get("session_id") and not session.get("_ended"):
         await end_session(session["session_id"], answered, avg_score)
+        session["_ended"] = True
 
     weak_areas = get_weak_areas(user_id, session["scenario"])
     recommendations = get_recommendations(user_id, session["scenario"])
@@ -384,7 +389,7 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
     session["scores"].append(score)
 
     case_id = f"{session['scenario']}_{current_idx + 1}"
-    record_error(user_id, case_id, session["scenario"], score)
+    await asyncio.to_thread(record_error, user_id, case_id, session["scenario"], score)
 
     await save_case_answer(
         session_id=session["session_id"],
@@ -435,7 +440,9 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
 
     if next_idx >= session["total"]:
         avg_score = sum(session["scores"]) / len(session["scores"]) if session["scores"] else 0
-        await end_session(session["session_id"], len(session["scores"]), avg_score)
+        if not session.get("_ended"):
+            await end_session(session["session_id"], len(session["scores"]), avg_score)
+            session["_ended"] = True
 
         weak_areas = get_weak_areas(user_id, session["scenario"])
         recommendations = get_recommendations(user_id, session["scenario"])

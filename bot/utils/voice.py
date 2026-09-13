@@ -159,14 +159,10 @@ async def speech_to_text(audio_file_path: str) -> str:
         logger.info(f"Распознан текст: {text[:100]}...")
         return text
 
-    except sr.UnknownValueError:
-        logger.warning("Не удалось распознать речь")
-        return None
-
-    except sr.RequestError as e:
-        logger.error(f"Ошибка сервиса распознавания: {e}")
+    except ImportError:
+        logger.error("speech_recognition не установлен. Установи: pip install SpeechRecognition")
         return None
 
     except Exception as e:
-        logger.error(f"Ошибка распознавания: {e}")
+        logger.warning(f"Ошибка распознавания: {e}")
         return None

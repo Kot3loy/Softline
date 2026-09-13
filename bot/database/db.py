@@ -14,7 +14,7 @@ _DB_VERSION = 2
 
 
 async def _get_db() -> aiosqlite.Connection:
-    """Получить singleton соединение"""
+    """Получить singleton соединение с reconnection"""
     global _db
     async with _db_lock:
         if _db is None:
@@ -24,30 +24,32 @@ async def _get_db() -> aiosqlite.Connection:
             await _db.execute("PRAGMA foreign_keys = ON")
             await _db.execute("PRAGMA journal_mode = WAL")
             logger.info("Соединение с БД установлено")
+        else:
+            # Проверяем соединение — если упало, пересоздаём
+            try:
+                await _db.execute("SELECT 1")
+            except Exception as e:
+                logger.warning(f"Соединение с БД потеряно: {e}, пересоздаю...")
+                try:
+                    await _db.close()
+                except Exception:
+                    pass
+                _db = await aiosqlite.connect(str(DB_PATH))
+                _db.row_factory = aiosqlite.Row
+                await _db.execute("PRAGMA foreign_keys = ON")
+                await _db.execute("PRAGMA journal_mode = WAL")
+                logger.info("Соединение с БД пересоздано")
         return _db
-
-
-async def _execute_with_retry(coro_func, *args, retries=3, **kwargs):
-    """Выполнить SQL-запрос с retry при database is locked"""
-    for attempt in range(retries):
-        try:
-            db = await _get_db()
-            return await coro_func(db, *args, **kwargs)
-        except aiosqlite.OperationalError as e:
-            if "database is locked" in str(e) and attempt < retries - 1:
-                logger.warning(f"БД заблокирована, попытка {attempt + 1}/{retries}")
-                await asyncio.sleep(0.1 * (attempt + 1))
-            else:
-                raise
 
 
 async def close_db():
     """Закрыть соединение"""
     global _db
-    if _db:
-        await _db.close()
-        _db = None
-        logger.info("Соединение с БД закрыто")
+    async with _db_lock:
+        if _db:
+            await _db.close()
+            _db = None
+            logger.info("Соединение с БД закрыто")
 
 
 async def init_db():
@@ -248,12 +250,16 @@ async def get_user_stats(user_id: int) -> dict:
 
 
 async def get_all_users(limit: int = 9999) -> list:
-    """Получить список пользователей"""
+    """Получить список пользователей (с пагинацией)"""
     db = await _get_db()
-    cursor = await db.execute(
-        "SELECT * FROM users ORDER BY created_at DESC LIMIT ?",
-        (limit,),
-    )
+    # Если limit слишком большой — берём всех
+    if limit >= 9999:
+        cursor = await db.execute("SELECT * FROM users ORDER BY created_at DESC")
+    else:
+        cursor = await db.execute(
+            "SELECT * FROM users ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 

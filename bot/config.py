@@ -17,7 +17,11 @@ class Config:
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 
     # Админы (ID через запятую)
-    ADMIN_IDS: list[int] = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
+    ADMIN_IDS: list[int] = []
+    try:
+        ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
+    except ValueError:
+        print("⚠️ ADMIN_IDS содержит нечисловые значения", file=sys.stderr)
 
     # GigaChat
     GIGACHAT_CREDENTIALS: str = os.getenv("GIGACHAT_CREDENTIALS", "")
@@ -26,8 +30,14 @@ class Config:
 
     # ChromaDB
     CHROMA_DIR: Path = BASE_DIR / os.getenv("CHROMA_DIR", "chroma_db")
-    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1000"))
-    CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "200"))
+    try:
+        CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1000"))
+    except (ValueError, TypeError):
+        CHUNK_SIZE: int = 1000
+    try:
+        CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "200"))
+    except (ValueError, TypeError):
+        CHUNK_OVERLAP: int = 200
 
     # SQLite
     DATABASE_DIR: Path = BASE_DIR / os.getenv("DATABASE_DIR", "database")

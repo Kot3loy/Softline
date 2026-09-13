@@ -1,6 +1,7 @@
 """Сценарии бота — системные промпты, информационный режим, приветственные сообщения."""
 
 import logging
+import asyncio
 from bot.core.ai_engine import ask_ai, _save_response
 from bot.core.rag import search
 
@@ -63,8 +64,8 @@ SYSTEM_PROMPTS = {
 
 async def answer_info_question(question: str, scenario: str, user_id: int = None) -> str:
     """Ответить на вопрос в информационном режиме (RAG + AI)"""
-    # Ищем релевантные документы
-    docs = search(question, k=3, source_type=None)
+    # Ищем релевантные документы (sync → async)
+    docs = await asyncio.to_thread(search, question, 3, None)
 
     # Формируем контекст из найденных документов
     context = ""

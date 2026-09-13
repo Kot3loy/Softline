@@ -22,7 +22,7 @@ def config():
 
 @pytest.fixture
 async def test_db():
-    """In-memory SQLite database for testing"""
+    """In-memory SQLite database for testing — isolate from production DB"""
     db = await aiosqlite.connect(":memory:")
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA foreign_keys = ON")
@@ -30,6 +30,7 @@ async def test_db():
     # Patch _get_db to return our test db
     import bot.database.db as db_module
     original_get_db = db_module._get_db
+    original_db = db_module._db
 
     async def mock_get_db():
         return db
@@ -92,10 +93,13 @@ async def test_db():
 
     yield db
 
-    # Cleanup
-    db_module._db = None
+    # Cleanup — восстанавливаем оригинальное состояние
+    try:
+        await db.close()
+    except Exception:
+        pass
+    db_module._db = original_db
     db_module._get_db = original_get_db
-    await db.close()
 
 
 @pytest.fixture

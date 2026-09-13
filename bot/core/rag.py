@@ -1,10 +1,11 @@
 """RAG-система — поиск релевантной информации по базе знаний.
 сделал по гайду из интернета, TF-IDF + стемминг для русского.
-работает нормально, но если будет время хочу попробовать chromadb"""
+работает нормально"""
 
 import logging
 import re
 import math
+import asyncio
 from collections import Counter
 from bot.config import config
 
@@ -62,6 +63,8 @@ def _load_documents() -> list:
 
 def _split_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list:
     """Разбить текст на чанки"""
+    if overlap >= chunk_size:
+        overlap = chunk_size // 4  # safety: overlap не может быть >= chunk_size
     chunks = []
     start = 0
     while start < len(text):
@@ -76,10 +79,9 @@ def _split_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list:
 # Простой стемминг для русского — обрезаем окончания
 _RU_SUFFIXES = [
     "ость", "ение", "ание", "тель", "ество", "изм", "ист",
-    "ый", "ий", "ой", "ые", "ие", "ий", "ая", "яя", "ое", "ее",
-    "у", "ю", "а", "я", "о", "е", "ы", "и", "ь", "ий",
-    "ться", "тся", "ться", "тся", "тся", "тся",
-    "ться", "тся", "ться", "тся",
+    "ый", "ий", "ой", "ые", "ие", "ая", "яя", "ое", "ее",
+    "у", "ю", "а", "я", "о", "е", "ы", "и", "ь",
+    "ться", "тся",
 ]
 
 

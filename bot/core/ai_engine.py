@@ -29,6 +29,10 @@ RATE_WINDOW = 60  # секунд
 _last_responses_ttl = {}  # type: dict[int, float]
 RESPONSES_TTL = 3600
 
+# Счётчик вызовов для периодической очистки
+_cleanup_counter = 0
+_CLEANUP_INTERVAL = 50  # каждые 50 запросов
+
 
 def _check_rate_limit(user_id: int) -> bool:
     """Проверить rate limit для пользователя. True = можно, False = слишком часто"""
@@ -113,16 +117,6 @@ async def _get_client():
         return _client
 
 
-STYLE = (
-    "СТИЛЬ ОБЩЕНИЯ:\n"
-    "- Пиши на русском языке, как живой человек, а не как робот.\n"
-    "- Используй разговорные слова ('короче', 'слушай', 'кстати') где уместно.\n"
-    "- Не пиши корпоративный жаргон типа 'в рамках', 'по причине', 'в контексте'.\n"
-    "- Варьируй длину предложений. Не начинай каждый ответ с 'Конечно!'.\n"
-    "- Говори на ты, как друг с другом.\n"
-)
-
-
 def _get_recent_responses(user_id: int) -> str:
     """Получить последние ответы пользователя для антиповтора"""
     responses = _last_responses.get(user_id, [])
@@ -152,10 +146,19 @@ def _parse_json(text: str, default: dict) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        # Пытаемся найти JSON — сначала простой (без вложенности), потом весь до конца
         match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
         if match:
             try:
                 return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+        # Попытка 2: вложенный JSON — берём от первой { до последней }
+        first = text.find('{')
+        last = text.rfind('}')
+        if first != -1 and last > first:
+            try:
+                return json.loads(text[first:last + 1])
             except json.JSONDecodeError:
                 pass
         return default
@@ -180,7 +183,8 @@ def _parse_text_response(text: str, case_type: str) -> dict:
         elif re.match(r'^[A-D]\.\s', line):
             options.append(line[3:].strip())
         elif "правильный ответ" in line.lower():
-            letter = line.split(":", 1)[1].strip().upper()
+            parts = line.split(":", 1)
+            letter = parts[1].strip().upper() if len(parts) > 1 else ""
             if letter in "ABCD":
                 correct = ord(letter) - ord("A")
         elif line.startswith("Объяснение:") or line.startswith("ПОДСКАЗКА:"):
@@ -214,10 +218,6 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 2000, u
         logger.warning(f"Rate limit exceeded for user {user_id}")
         return "Слишком много запросов. Подожди минуту и попробуй снова."
 
-    # Очистка старых данных (раз в N запросов)
-    if user_id and user_id % 10 == 0:
-        _cleanup_old_data()
-
     messages = []
     if system_prompt:
         messages.append(ChatMessage(role="system", content=system_prompt))
@@ -226,11 +226,14 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 2000, u
     try:
         client = await _get_client()
         chat = ChatCompletionRequest(messages=messages)
-        response = await client.achat.create(chat)
+        response = await asyncio.wait_for(client.achat.create(chat), timeout=60)
         raw = response.messages[0].content[0].text
         logger.debug(f"GigaChat response: {raw[:500]}")
         return raw
 
+    except asyncio.TimeoutError:
+        logger.error("GigaChat API timeout (60 сек)")
+        return "Извини, AI слишком долго думал. Попробуй позже."
     except Exception as e:
         logger.error(f"Ошибка AI: {e}")
         return "Извини, произошла ошибка при обращении к AI. Попробуй позже."
@@ -238,6 +241,11 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 2000, u
 
 async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list = None, case_type: str = "open", user_id: int = None) -> dict:
     """Сгенерировать задание для экзаменатора"""
+    global _cleanup_counter
+    _cleanup_counter += 1
+    if _cleanup_counter % _CLEANUP_INTERVAL == 0:
+        _cleanup_old_data()
+
     weak_hint = ""
     if weak_areas:
         weak_list = ", ".join([w.get("case_id", "") for w in weak_areas[:3]])
@@ -337,6 +345,11 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
 
 async def evaluate_answer(user_answer: str, case_data: dict, user_id: int = None) -> dict:
     """Оценить ответ пользователя на задание"""
+    global _cleanup_counter
+    _cleanup_counter += 1
+    if _cleanup_counter % _CLEANUP_INTERVAL == 0:
+        _cleanup_old_data()
+
     # Санитизация ввода
     user_answer = _sanitize_input(user_answer)
 
@@ -385,9 +398,14 @@ async def evaluate_answer(user_answer: str, case_data: dict, user_id: int = None
         "source": "",
     })
 
-    # Гарантируем что score — число
+    # Гарантируем что score — число в диапазоне [0, 10]
     if not isinstance(parsed.get("score"), (int, float)):
         parsed["score"] = 5
+    parsed["score"] = max(0, min(10, int(parsed["score"])))
+
+    # Экранируем HTML в feedback чтобы не сломать parse_mode
+    if "feedback" in parsed and isinstance(parsed["feedback"], str):
+        parsed["feedback"] = parsed["feedback"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     return parsed
 

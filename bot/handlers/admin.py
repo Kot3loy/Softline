@@ -95,6 +95,8 @@ async def cb_admin_users(cb: CallbackQuery):
     text = "👥 <b>Последние пользователи</b>\n\n"
     for u in users:
         name = u.get("first_name") or u.get("username") or str(u["user_id"])
+        # Экранируем HTML-символы чтобы не сломать parse_mode
+        name = str(name).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         text += f"• {name} (id: {u['user_id']}) — {u.get('current_scenario', '?')}\n"
 
     if not users:
@@ -157,11 +159,24 @@ async def handle_broadcast_text(msg: Message, state: FSMContext):
     failed = 0
 
     import asyncio
+    from aiogram.exceptions import TelegramRetryAfter
+
     for user in users:
         try:
-            await msg.bot.send_message(user["user_id"], msg.text)
+            # Ограничиваем длину сообщения (Telegram лимит — 4096 символов)
+            text_to_send = msg.text[:4096] if msg.text else ""
+            await msg.bot.send_message(user["user_id"], text_to_send)
             sent += 1
             await asyncio.sleep(0.1)
+        except TelegramRetryAfter as e:
+            logger.warning(f"Flood control, жду {e.retry_after} сек")
+            await asyncio.sleep(e.retry_after)
+            # Повторная попытка после ожидания
+            try:
+                await msg.bot.send_message(user["user_id"], msg.text)
+                sent += 1
+            except Exception:
+                failed += 1
         except Exception as e:
             logger.warning(f"Не удалось отправить пользователю {user['user_id']}: {e}")
             failed += 1

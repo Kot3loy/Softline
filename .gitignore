@@ -1,5 +1,6 @@
 # Secrets
 .env
+.env.*
 
 # Python
 __pycache__/
@@ -40,4 +41,5 @@ Thumbs.db
 
 # Archive
 data/learning_errors_archive.json
+data/learning_errors.json
 data/reports/

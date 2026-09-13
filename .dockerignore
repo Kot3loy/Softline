@@ -19,6 +19,11 @@ bot.log
 .opencode/
 *.md
 !README.md
+!data/**/*.md
+!data/universities/*.md
+!data/companies/*.md
+!data/interviews/*.md
+!data/cases/*.md
 tests/
 data/learning_errors.json
 data/learning_errors_archive.json

@@ -22,3 +22,6 @@ aiosqlite==0.22.1
 
 # Utils
 aiofiles==25.1.0
+
+# Testing (только для разработки, не для продакшена)
+pytest-asyncio==1.0.0

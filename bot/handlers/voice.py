@@ -11,7 +11,7 @@ from aiogram.fsm.context import FSMContext
 
 from pydub import AudioSegment
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)  # основной логгер для этого модуля
 
 _ffmpeg_path = shutil.which("ffmpeg")
 _ffprobe_path = shutil.which("ffprobe")
@@ -44,7 +44,7 @@ from bot.core.scenarios import answer_info_question
 from bot.database.db import get_or_create_user
 
 router = Router()
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)  # дубликат — используем _log
 
 
 @dataclass
@@ -107,8 +107,7 @@ async def handle_voice(msg: Message, state: FSMContext):
         await msg.bot.send_chat_action(msg.chat.id, "typing")
         if wav_file:
             text = await speech_to_text(wav_file)
-        else:
-            text = None
+        # text уже может быть установлен из fallback SR выше (строка 98)
 
         if not text:
             await msg.answer(
@@ -129,7 +128,8 @@ async def handle_voice(msg: Message, state: FSMContext):
                 await msg.answer_voice(FSInputFile(voice_file))
                 await msg.answer(f"📝 <b>Текст:</b>\n{answer}", parse_mode="HTML")
             finally:
-                os.remove(voice_file)
+                if os.path.exists(voice_file):
+                    os.remove(voice_file)
         else:
             await msg.answer(answer, parse_mode="HTML")
 

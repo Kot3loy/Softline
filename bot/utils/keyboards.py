@@ -1,6 +1,9 @@
 """Генерация клавиатур — Reply и Inline кнопки для всех режимов бота."""
 
+import logging
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+
+logger = logging.getLogger(__name__)
 
 
 def main_menu_kb():
@@ -75,6 +78,8 @@ def back_to_menu_kb():
 def choice_answer_kb(options: list, case_num: int, total: int):
     """Клавиатура с вариантами ответа (4 кнопки A/B/C/D)"""
     letters = ["A", "B", "C", "D"]
+    if len(options) > 4:
+        logger.warning(f"Больше 4 вариантов ({len(options)}), обрезаю до 4")
     buttons = []
     for i, option in enumerate(options[:4]):
         buttons.append([

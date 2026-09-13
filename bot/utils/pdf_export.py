@@ -9,28 +9,35 @@ logger = logging.getLogger(__name__)
 class PDFReport(FPDF):
     """Класс для генерации PDF-отчётов"""
 
+    _use_dejavu = False  # флаг — зарегистрирован ли DejaVu
+
     def header(self):
-        self.set_font("DejaVu", "B", 16)
+        font = "DejaVu" if self._use_dejavu else "Helvetica"
+        self.set_font(font, "B", 16)
         self.cell(0, 10, "AI-наставник: Отчёт", align="C")
         self.ln(10)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font("DejaVu", "I", 8)
+        font = "DejaVu" if self._use_dejavu else "Helvetica"
+        self.set_font(font, "I", 8)
         self.cell(0, 10, f"Стр. {self.page_no()}", align="C")
 
     def chapter_title(self, title: str):
-        self.set_font("DejaVu", "B", 14)
+        font = "DejaVu" if self._use_dejavu else "Helvetica"
+        self.set_font(font, "B", 14)
         self.cell(0, 10, title)
         self.ln(10)
 
     def chapter_body(self, body: str):
-        self.set_font("DejaVu", "", 11)
+        font = "DejaVu" if self._use_dejavu else "Helvetica"
+        self.set_font(font, "", 11)
         self.multi_cell(0, 7, body)
         self.ln(3)
 
     def add_score(self, label: str, score: int, max_score: int = 10):
-        self.set_font("DejaVu", "B", 11)
+        font = "DejaVu" if self._use_dejavu else "Helvetica"
+        self.set_font(font, "B", 11)
         self.cell(0, 7, f"{label}: {score}/{max_score}")
         self.ln(7)
 
@@ -46,6 +53,7 @@ class PDFReport(FPDF):
 
 def generate_report(user_id: int, scenario: str, results: list, case_answers: list = None) -> str:
     """Сгенерировать PDF-отчёт"""
+    import time
     from bot.core.adaptive import get_recommendations
 
     font_paths = [
@@ -71,7 +79,6 @@ def generate_report(user_id: int, scenario: str, results: list, case_answers: li
         pdf.ln(10)
         pdf.set_font("Helvetica", "", 11)
         pdf.multi_cell(0, 7, "Font not found. Install DejaVu Sans for proper Russian text rendering.")
-        import time
         output_dir = config.DATA_DIR / "reports"
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = int(time.time())
@@ -80,6 +87,7 @@ def generate_report(user_id: int, scenario: str, results: list, case_answers: li
         return str(output_path)
 
     pdf = PDFReport()
+    pdf._use_dejavu = True
     pdf.add_font("DejaVu", "", str(font_path), uni=True)
     pdf.add_font("DejaVu", "B", str(font_path), uni=True)
     pdf.add_font("DejaVu", "I", str(font_path), uni=True)
@@ -96,7 +104,7 @@ def generate_report(user_id: int, scenario: str, results: list, case_answers: li
     # Детали по заданиям из БД
     if case_answers:
         total_score = sum(a.get("score", 0) for a in case_answers)
-        avg_score = total_score / len(case_answers)
+        avg_score = total_score / max(len(case_answers), 1)
 
         pdf.add_score("Средний балл", round(avg_score))
         pdf.ln(5)
@@ -115,7 +123,7 @@ def generate_report(user_id: int, scenario: str, results: list, case_answers: li
             pdf.ln(2)
     elif results:
         total_score = sum(r.get("score", 0) for r in results)
-        avg_score = total_score / len(results)
+        avg_score = total_score / max(len(results), 1)
 
         pdf.add_score("Средний балл", round(avg_score))
         pdf.ln(5)
@@ -161,7 +169,6 @@ def generate_report(user_id: int, scenario: str, results: list, case_answers: li
     )
 
     # Сохраняем с уникальным именем (timestamp)
-    import time
     output_dir = config.DATA_DIR / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = int(time.time())

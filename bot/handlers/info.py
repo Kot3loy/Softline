@@ -10,6 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from bot.utils.keyboards import back_to_menu_kb
 from bot.utils.voice import text_to_speech
 from bot.core.scenarios import answer_info_question, get_welcome_message
+from bot.core.ai_engine import _sanitize_input
 from bot.database.db import update_user, get_or_create_user
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class InfoState(StatesGroup):
 @router.callback_query(F.data.startswith("info_"))
 async def cb_info_mode(cb: CallbackQuery, state: FSMContext):
     """Информационный режим — начало диалога"""
-    scenario = cb.data.replace("info_", "")
+    scenario = cb.data.removeprefix("info_")
     await state.set_state(InfoState.in_chat)
     await state.update_data(scenario=scenario)
 
@@ -61,7 +62,8 @@ async def handle_text_message(msg: Message, state: FSMContext):
 
     await msg.bot.send_chat_action(msg.chat.id, "typing")
 
-    answer = await answer_info_question(msg.text, scenario, user_id=user_id)
+    clean_text = _sanitize_input(msg.text)
+    answer = await answer_info_question(clean_text, scenario, user_id=user_id)
 
     # Проверяем включён ли голос — если да, отправляем голосом + текст
     user_data = await get_or_create_user(user_id)

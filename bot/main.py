@@ -41,7 +41,7 @@ async def health_handler(request):
 
 
 async def start_web_server():
-    """Запуск微型 HTTP-сервера для health checks"""
+    """Запуск HTTP-сервера для health checks"""
     global _web_runner
     app = web.Application()
     app.router.add_get("/health", health_handler)
@@ -76,9 +76,9 @@ async def on_shutdown():
 
     # Закрываем GigaChat клиент
     try:
-        from bot.core.ai_engine import _client
-        if _client:
-            await _client.__aexit__(None, None, None)
+        import bot.core.ai_engine as ai_mod
+        if ai_mod._client:
+            await ai_mod._client.__aexit__(None, None, None)
             logger.info("GigaChat клиент закрыт")
     except Exception as e:
         logger.warning(f"Ошибка при закрытии GigaChat: {e}")
@@ -128,7 +128,7 @@ def _setup_signals(loop):
         # На Windows add_signal_handler не поддерживается — ловим через thread
         import threading
         def _signal_handler():
-            asyncio.create_task(_shutdown_event.set())
+            loop.call_soon_threadsafe(_shutdown_event.set)
         signal.signal(signal.SIGINT, lambda s, f: threading.Thread(target=_signal_handler).start())
     else:
         # На Linux/Mac поддерживаем оба сигнала

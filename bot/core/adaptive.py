@@ -2,6 +2,8 @@
 
 import logging
 import json
+import tempfile
+import os
 from bot.config import config
 
 logger = logging.getLogger(__name__)
@@ -22,11 +24,21 @@ def _load_errors() -> dict:
 
 
 def _save_errors(data: dict):
-    """Сохранить данные об ошибках"""
+    """Сохранить данные об ошибках (атомарная запись — write-to-temp-then-rename)"""
     try:
         ERRORS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(ERRORS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        # Пишем во временный файл, потом делаем rename — не потеряем данные при краше
+        fd, tmp_path = tempfile.mkstemp(dir=ERRORS_FILE.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            # Атомарная замена (на Windows os.replace тоже атомарен для одного volume)
+            os.replace(tmp_path, str(ERRORS_FILE))
+        except Exception:
+            # Если что-то пошло не так — удаляем временный файл
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
     except Exception as e:
         logger.error(f"Ошибка сохранения данных об ошибках: {e}")
 
@@ -130,8 +142,9 @@ def get_recommendations(user_id: int, scenario: str) -> list:
 
     recommendations = []
     for area in weak_areas[:3]:
+        case_id = area.get("case_id", "неизвестно")
         recommendations.append(
-            f"Обрати внимание на тему «{friendly}» — средний балл {area['avg_score']:.1f}"
+            f"Задание «{case_id}» ({friendly}) — средний балл {area['avg_score']:.1f}, повтори его"
         )
 
     if not recommendations:

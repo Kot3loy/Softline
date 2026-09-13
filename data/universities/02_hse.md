@@ -49,5 +49,5 @@
 - Официальный сайт ВШЭ: https://www.hse.ru
 - Портал абитуриентов: https://www.hse.ru/apply
 - Рейтинг вузов: https://raex-rr.ru
-- Отзывы студентов: https://hrabr.com/hse
+- Отзывы студентов: https://habr.com/hse
 - Корпоративные партнёры: https://www.hse.ru/employers
