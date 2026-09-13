@@ -125,8 +125,11 @@ async def on_error(event: ErrorEvent):
 def _setup_signals(loop):
     """Настройка обработчиков сигналов для graceful shutdown"""
     if sys.platform == "win32":
-        # На Windows SIGTERM не поддерживается, только SIGINT (Ctrl+C)
-        loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(_shutdown_event.set()))
+        # На Windows add_signal_handler не поддерживается — ловим через thread
+        import threading
+        def _signal_handler():
+            asyncio.create_task(_shutdown_event.set())
+        signal.signal(signal.SIGINT, lambda s, f: threading.Thread(target=_signal_handler).start())
     else:
         # На Linux/Mac поддерживаем оба сигнала
         for sig in (signal.SIGTERM, signal.SIGINT):
