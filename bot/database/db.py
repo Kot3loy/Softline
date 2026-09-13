@@ -189,6 +189,19 @@ async def update_user(user_id: int, **kwargs):
     await db.commit()
 
 
+async def reset_user_progress(user_id: int):
+    """Сбросить прогресс пользователя: ответы на кейсы и сессии"""
+    db = await _get_db()
+    await db.execute("DELETE FROM case_answers WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    await db.execute(
+        "UPDATE users SET current_scenario = 'university' WHERE user_id = ?",
+        (user_id,),
+    )
+    await db.commit()
+    logger.info(f"Прогресс сброшен для user={user_id}")
+
+
 async def create_session(user_id: int, scenario: str, mode: str, cases_total: int = 0) -> int:
     """Создать новую сессию"""
     db = await _get_db()

@@ -234,5 +234,33 @@
         ]
       }
     }
+  },
+  "6796336566": {
+    "job": {
+      "job_1": {
+        "attempts": 2,
+        "total_score": 10,
+        "errors": [
+          {
+            "score": 5,
+            "attempt": 1
+          },
+          {
+            "score": 5,
+            "attempt": 2
+          }
+        ]
+      },
+      "job_2": {
+        "attempts": 1,
+        "total_score": 2,
+        "errors": [
+          {
+            "score": 2,
+            "attempt": 1
+          }
+        ]
+      }
+    }
   }
 }

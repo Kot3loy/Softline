@@ -33,6 +33,16 @@ RESPONSES_TTL = 3600
 _cleanup_counter = 0
 _CLEANUP_INTERVAL = 50  # каждые 50 запросов
 
+# Retry для AI запросов
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # секунд между попытками
+
+# Маркеры ошибок — если ответ начинается с них, это не полезный ответ
+_ERROR_MARKERS = (
+    "Извини", "Не удалось", "Слишком много", "ошибка",
+    "Ошибка", "не могу", "Попробуй позже",
+)
+
 
 def _check_rate_limit(user_id: int) -> bool:
     """Проверить rate limit для пользователя. True = можно, False = слишком часто"""
@@ -212,7 +222,7 @@ def _parse_text_response(text: str, case_type: str) -> dict:
 
 
 async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 2000, user_id: int = None) -> str:
-    """Отправить запрос к AI через GigaChat с rate limiting"""
+    """Отправить запрос к AI через GigaChat с rate limiting и retry"""
     # Rate limit check
     if user_id and not _check_rate_limit(user_id):
         logger.warning(f"Rate limit exceeded for user {user_id}")
@@ -223,24 +233,35 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 2000, u
         messages.append(ChatMessage(role="system", content=system_prompt))
     messages.append(ChatMessage(role="user", content=prompt))
 
-    try:
-        client = await _get_client()
-        chat = ChatCompletionRequest(messages=messages)
-        response = await asyncio.wait_for(client.achat.create(chat), timeout=60)
-        raw = response.messages[0].content[0].text
-        logger.debug(f"GigaChat response: {raw[:500]}")
-        return raw
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            client = await _get_client()
+            chat = ChatCompletionRequest(messages=messages)
+            response = await asyncio.wait_for(client.achat.create(chat), timeout=60)
+            raw = response.messages[0].content[0].text
+            if raw and raw.strip():
+                logger.debug(f"GigaChat response: {raw[:500]}")
+                return raw
+            # Пустой ответ — повторяем
+            logger.warning(f"GigaChat вернул пустой ответ (попытка {attempt + 1}/{MAX_RETRIES})")
+            last_error = "пустой ответ"
+        except asyncio.TimeoutError:
+            logger.error(f"GigaChat API timeout (попытка {attempt + 1}/{MAX_RETRIES})")
+            last_error = "timeout"
+        except Exception as e:
+            logger.error(f"Ошибка AI (попытка {attempt + 1}/{MAX_RETRIES}): {e}")
+            last_error = str(e)
 
-    except asyncio.TimeoutError:
-        logger.error("GigaChat API timeout (60 сек)")
-        return "Извини, AI слишком долго думал. Попробуй позже."
-    except Exception as e:
-        logger.error(f"Ошибка AI: {e}")
-        return "Извини, произошла ошибка при обращении к AI. Попробуй позже."
+        if attempt < MAX_RETRIES - 1:
+            await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+
+    logger.error(f"GigaChat не ответил после {MAX_RETRIES} попыток: {last_error}")
+    return "Извини, AI сейчас перегружен. Попробуй через минуту."
 
 
 async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list = None, case_type: str = "open", user_id: int = None) -> dict:
-    """Сгенерировать задание для экзаменатора"""
+    """Сгенерировать задание для экзаменатора с retry"""
     global _cleanup_counter
     _cleanup_counter += 1
     if _cleanup_counter % _CLEANUP_INTERVAL == 0:
@@ -317,34 +338,53 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             '}'
         )
 
-    result = await ask_ai(prompt, system, user_id=user_id)
+    # Retry: до 3 попыток с упрощающим промптом
+    fallback_prompt = (
+        f"Сгенерируй задание для сценария '{scenario}'. "
+        'Верни ТОЛЬКО JSON без markdown: {{"type": "{case_type}", "situation": "...", "question": "..."}}'
+    )
+    prompts = [prompt, fallback_prompt, fallback_prompt]
 
-    parsed = _parse_json(result, {})
-    if not parsed or parsed.get("situation") == "Не удалось сгенерировать задание":
-        parsed = _parse_text_response(result, case_type)
-    if not parsed or not parsed.get("situation"):
-        parsed = {
-            "type": case_type,
-            "situation": "Не удалось сгенерировать задание",
-            "question": "Попробуй позже",
-        }
+    for attempt in range(MAX_RETRIES):
+        result = await ask_ai(prompts[attempt], system, user_id=user_id)
 
-    if "type" not in parsed:
-        parsed["type"] = case_type
+        # Если ask_ai вернул ошибку — повторяем
+        if any(result.startswith(m) for m in _ERROR_MARKERS):
+            logger.warning(f"generate_case: ошибка от AI (попытка {attempt + 1}): {result[:100]}")
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY)
+            continue
 
-    if parsed["type"] == "choice":
-        if "options" not in parsed or not isinstance(parsed["options"], list):
-            parsed["type"] = "open"
-        elif len(parsed["options"]) != 4:
-            parsed["type"] = "open"
-        elif "correct" not in parsed:
-            parsed["correct"] = 0
+        parsed = _parse_json(result, {})
+        if not parsed or parsed.get("situation") == "Не удалось сгенерировать задание":
+            parsed = _parse_text_response(result, case_type)
+        if parsed and parsed.get("situation"):
+            if "type" not in parsed:
+                parsed["type"] = case_type
+            if parsed["type"] == "choice":
+                if "options" not in parsed or not isinstance(parsed["options"], list):
+                    parsed["type"] = "open"
+                elif len(parsed["options"]) != 4:
+                    parsed["type"] = "open"
+                elif "correct" not in parsed:
+                    parsed["correct"] = 0
+            return parsed
 
-    return parsed
+        logger.warning(f"generate_case: невалидный JSON (попытка {attempt + 1})")
+        if attempt < MAX_RETRIES - 1:
+            await asyncio.sleep(RETRY_DELAY)
+
+    # Все попытки исчерпаны
+    logger.error(f"generate_case: не удалось после {MAX_RETRIES} попыток для {scenario}")
+    return {
+        "type": case_type,
+        "situation": "Не удалось сгенерировать задание",
+        "question": "Попробуй позже — AI сейчас перегружен",
+    }
 
 
 async def evaluate_answer(user_answer: str, case_data: dict, user_id: int = None) -> dict:
-    """Оценить ответ пользователя на задание"""
+    """Оценить ответ пользователя на задание с retry"""
     global _cleanup_counter
     _cleanup_counter += 1
     if _cleanup_counter % _CLEANUP_INTERVAL == 0:
@@ -391,27 +431,56 @@ async def evaluate_answer(user_answer: str, case_data: dict, user_id: int = None
         '}'
     )
 
-    result = await ask_ai(prompt, system, user_id=user_id)
-    parsed = _parse_json(result, {
+    fallback_prompt = (
+        f"Задание: {case_data.get('situation', '')}\n"
+        f"Вопрос: {case_data.get('question', '')}\n"
+        f"Ответ: {user_answer}\n\n"
+        'Оцени 0-10. Верни ТОЛЬКО JSON без markdown: {{"score": 7, "feedback": "..."}}'
+    )
+    prompts = [prompt, fallback_prompt, fallback_prompt]
+
+    for attempt in range(MAX_RETRIES):
+        result = await ask_ai(prompts[attempt], system, user_id=user_id)
+
+        if any(result.startswith(m) for m in _ERROR_MARKERS):
+            logger.warning(f"evaluate_answer: ошибка от AI (попытка {attempt + 1})")
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY)
+            continue
+
+        parsed = _parse_json(result, {
+            "score": 5,
+            "feedback": "Не удалось оценить ответ",
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": [],
+            "example_answer": "",
+            "source": "",
+        })
+
+        # Гарантируем что score — число в диапазоне [0, 10]
+        if isinstance(parsed.get("score"), (int, float)):
+            parsed["score"] = max(0, min(10, int(parsed["score"])))
+            # Успешно получили валидный ответ
+            if "feedback" in parsed and isinstance(parsed["feedback"], str):
+                parsed["feedback"] = parsed["feedback"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            return parsed
+
+        logger.warning(f"evaluate_answer: невалидный score (попытка {attempt + 1})")
+        if attempt < MAX_RETRIES - 1:
+            await asyncio.sleep(RETRY_DELAY)
+
+    # Все попытки исчерпаны
+    logger.error(f"evaluate_answer: не удалось после {MAX_RETRIES} попыток")
+    return {
         "score": 5,
-        "feedback": "Не удалось оценить ответ",
+        "feedback": "AI сейчас перегружен — оценка приблизительная. Попробуй позже для точной обратной связи.",
         "strengths": [],
         "weaknesses": [],
         "recommendations": [],
         "example_answer": "",
         "source": "",
-    })
-
-    # Гарантируем что score — число в диапазоне [0, 10]
-    if not isinstance(parsed.get("score"), (int, float)):
-        parsed["score"] = 5
-    parsed["score"] = max(0, min(10, int(parsed["score"])))
-
-    # Экранируем HTML в feedback чтобы не сломать parse_mode
-    if "feedback" in parsed and isinstance(parsed["feedback"], str):
-        parsed["feedback"] = parsed["feedback"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    return parsed
+    }
 
 
 async def check_answer_relevance(user_answer: str, case_data: dict, user_id: int = None) -> dict:

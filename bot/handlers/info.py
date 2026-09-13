@@ -18,9 +18,25 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 DISCLAIMER = (
-    "⚠️ Рекомендации носят информационный характер и не заменяют "
+    "\n\n⚠️ Рекомендации носят информационный характер и не заменяют "
     "официальные требования вузов и работодателей."
 )
+
+# маркеры ошибок — если ответ начинается с них, дисклеймер не показываем
+_ERROR_MARKERS = (
+    "Извини", "Не удалось", "Слишком много", "ошибка",
+    "Ошибка", "не могу", "Попробуй позже",
+)
+
+
+def _should_show_disclaimer(answer: str) -> bool:
+    """Показывать дисклеймер только при полезном ответе AI"""
+    if not answer or len(answer) < 80:
+        return False
+    for marker in _ERROR_MARKERS:
+        if answer.startswith(marker):
+            return False
+    return True
 
 
 class InfoState(StatesGroup):
@@ -65,6 +81,9 @@ async def handle_text_message(msg: Message, state: FSMContext):
     clean_text = _sanitize_input(msg.text)
     answer = await answer_info_question(clean_text, scenario, user_id=user_id)
 
+    # Дисклеймер только при полезном ответе
+    suffix = DISCLAIMER if _should_show_disclaimer(answer) else ""
+
     # Проверяем включён ли голос — если да, отправляем голосом + текст
     user_data = await get_or_create_user(user_id)
     voice_enabled = user_data.get("voice_enabled", 0) == 1
@@ -74,10 +93,10 @@ async def handle_text_message(msg: Message, state: FSMContext):
         try:
             if voice_file:
                 await msg.answer_voice(FSInputFile(voice_file))
-                await msg.answer(f"📝 <b>Текст:</b>\n{answer}\n\n{DISCLAIMER}", parse_mode="HTML")
+                await msg.answer(f"📝 <b>Текст:</b>\n{answer}{suffix}", parse_mode="HTML")
                 return
         finally:
             if voice_file and os.path.exists(voice_file):
                 os.remove(voice_file)
 
-    await msg.answer(f"{answer}\n\n{DISCLAIMER}", parse_mode="HTML")
+    await msg.answer(f"{answer}{suffix}", parse_mode="HTML")

@@ -253,8 +253,7 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
     answered = len(session["scores"])
     total = session["total"]
     text = f"📊 <b>Оценка: {score}/10</b>\n\n{feedback}\n\n"
-    text += f"📋 Выполнено: {answered}/{total}\n"
-    text += EXAM_DISCLAIMER
+    text += f"📋 Выполнено: {answered}/{total}"
 
     next_idx = current_idx + 1
 
@@ -433,8 +432,7 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
 
     answered = len(session["scores"])
     total = session["total"]
-    text += f"\n📋 Выполнено: {answered}/{total}\n"
-    text += EXAM_DISCLAIMER
+    text += f"\n📋 Выполнено: {answered}/{total}"
 
     next_idx = current_idx + 1
 

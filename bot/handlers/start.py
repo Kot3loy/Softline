@@ -100,6 +100,39 @@ async def cb_settings_voice(cb: CallbackQuery):
     await cb.answer(f"Голос {status}!", show_alert=True)
 
 
+# Состояния для подтверждения сброса
+_reset_confirm_users = set()
+
+
+@router.callback_query(F.data == "settings_reset_progress")
+async def cb_settings_reset_progress(cb: CallbackQuery):
+    """Сброс прогресса — первый шаг: подтверждение"""
+    user_id = cb.from_user.id
+    if user_id in _reset_confirm_users:
+        # Второе нажатие — подтверждено
+        _reset_confirm_users.discard(user_id)
+        from bot.database.db import reset_user_progress
+        await reset_user_progress(user_id)
+        # Сбрасываем также in-memory сессии экзамена
+        from bot.handlers.examiner import exam_sessions
+        exam_sessions.pop(user_id, None)
+        await cb.answer("🗑 Прогресс сброшен!", show_alert=True)
+        await cb.message.edit_reply_markup(reply_markup=settings_kb())
+    else:
+        # Первое нажатие — просим подтвердить
+        _reset_confirm_users.add(user_id)
+        await cb.answer(
+            "⚠️ Нажми ещё раз для подтверждения. Прогресс будет удалён безвозвратно!",
+            show_alert=True,
+        )
+        # Через 30 секунд автоматически сбрасываем подтверждение
+        import asyncio
+        async def _clear_confirm():
+            await asyncio.sleep(30)
+            _reset_confirm_users.discard(user_id)
+        asyncio.create_task(_clear_confirm())
+
+
 @router.callback_query(F.data == "settings_about")
 async def cb_settings_about(cb: CallbackQuery):
     """О боте"""

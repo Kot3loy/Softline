@@ -22,8 +22,9 @@ def test_settings_kb():
     # Голос выключен
     kb = settings_kb(voice_enabled=False)
     assert kb is not None
-    assert len(kb.inline_keyboard) == 3  # голос, о боте, назад
+    assert len(kb.inline_keyboard) == 4  # голос, сброс прогресса, о боте, назад
     assert "Выкл" in kb.inline_keyboard[0][0].text
+    assert "Сбросить" in kb.inline_keyboard[1][0].text
 
     # Голос включён
     kb = settings_kb(voice_enabled=True)

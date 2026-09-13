@@ -25,6 +25,7 @@ def settings_kb(voice_enabled: bool = False):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=voice_text, callback_data="settings_voice")],
+            [InlineKeyboardButton(text="🗑 Сбросить прогресс", callback_data="settings_reset_progress")],
             [InlineKeyboardButton(text="ℹ️ О боте", callback_data="settings_about")],
             [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")],
         ]
