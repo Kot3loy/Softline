@@ -59,7 +59,9 @@ config = Config()
 
 
 def validate_config():
-    """Проверить что критичные переменные заданы"""
+    """Проверить что критичные переменные заданы.
+    Вызывать ТОЛЬКО при реальном запуске бота, не при импорте.
+    """
     errors = []
     if not config.BOT_TOKEN:
         errors.append("BOT_TOKEN не задан")
@@ -71,3 +73,13 @@ def validate_config():
             print(f"  - {e}", file=sys.stderr)
         print("\nСоздай файл .env из .env.example и заполни его.", file=sys.stderr)
         sys.exit(1)
+
+
+def check_config() -> list[str]:
+    """Проверить конфиг и вернуть список ошибок (не крашит)."""
+    errors = []
+    if not config.BOT_TOKEN:
+        errors.append("BOT_TOKEN не задан")
+    if not config.GIGACHAT_CREDENTIALS:
+        errors.append("GIGACHAT_CREDENTIALS не задан")
+    return errors

@@ -1,6 +1,6 @@
 # Telegram Bot
 aiogram==3.31.0
-aiohttp>=3.8.0
+aiohttp==3.11.18
 
 # Environment variables
 python-dotenv==1.2.3
