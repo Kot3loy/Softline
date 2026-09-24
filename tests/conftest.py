@@ -102,6 +102,15 @@ async def test_db():
     db_module._get_db = original_get_db
 
 
+@pytest.fixture(autouse=True)
+def clear_last_msg():
+    """Сбросить кэш последнего сообщения между тестами"""
+    import bot.handlers.start as start_mod
+    start_mod._last_msg.clear()
+    yield
+    start_mod._last_msg.clear()
+
+
 @pytest.fixture
 def mock_message():
     """Mock aiogram Message"""

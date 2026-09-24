@@ -2,24 +2,25 @@ services:
   - type: worker
     name: softline-bot
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.12"
       - key: BOT_TOKEN
         sync: false
       - key: GIGACHAT_CREDENTIALS
         sync: false
+      - key: GIGACHAT_MODEL
+        value: GigaChat-2
+      - key: GIGACHAT_VERIFY_SSL_CERTS
+        value: "true"
       - key: ADMIN_IDS
         sync: false
-      - key: GIGACHAT_MODEL
-        value: "GigaChat"
-      - key: GIGACHAT_VERIFY_SSL_CERTS
-        value: "false"
-      - key: DATABASE_DIR
-        value: "./database"
-      - key: DATABASE_NAME
-        value: "bot.db"
       - key: LOG_LEVEL
-        value: "INFO"
+        value: INFO
+      - key: PYTHON_VERSION
+        value: 3.12.0
+    disk:
+      name: data
+      mountPath: /opt/render/project/src/database
+      sizeGB: 1

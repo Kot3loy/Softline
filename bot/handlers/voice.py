@@ -9,42 +9,57 @@ from aiogram import Router, F
 from aiogram.types import Message, FSInputFile, Chat, User
 from aiogram.fsm.context import FSMContext
 
-from pydub import AudioSegment
+_log = logging.getLogger(__name__)
 
-_log = logging.getLogger(__name__)  # основной логгер для этого модуля
+# Optional voice dependencies
+try:
+    from pydub import AudioSegment
+    _VOICE_AVAILABLE = True
+except ImportError:
+    _VOICE_AVAILABLE = False
+    AudioSegment = None
 
-_ffmpeg_path = shutil.which("ffmpeg")
-_ffprobe_path = shutil.which("ffprobe")
+if not _VOICE_AVAILABLE:
+    _log.warning("Voice features disabled: pydub not available (audioop missing in Python 3.14+)")
 
-if not _ffmpeg_path:
-    for p in [r"C:\ffmpeg\bin", r"C:\Program Files\ffmpeg\bin", "/usr/bin", "/usr/local/bin"]:
-        if os.path.exists(os.path.join(p, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")):
-            _ffmpeg_path = os.path.join(p, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
-            break
+# Skip ffmpeg setup if voice not available
+if _VOICE_AVAILABLE:
+    _ffmpeg_path = shutil.which("ffmpeg")
+    _ffprobe_path = shutil.which("ffprobe")
 
-if not _ffprobe_path and _ffmpeg_path:
-    _ffprobe_path = os.path.join(
-        os.path.dirname(_ffmpeg_path),
-        "ffprobe.exe" if os.name == "nt" else "ffprobe"
-    )
-    if not os.path.exists(_ffprobe_path):
-        _ffprobe_path = None
+    if not _ffmpeg_path:
+        for p in [r"C:\ffmpeg\bin", r"C:\Program Files\ffmpeg\bin", "/usr/bin", "/usr/local/bin"]:
+            if os.path.exists(os.path.join(p, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")):
+                _ffmpeg_path = os.path.join(p, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+                break
 
-if _ffmpeg_path:
-    AudioSegment.converter = _ffmpeg_path
-    _log.info(f"ffmpeg: {_ffmpeg_path}")
-if _ffprobe_path:
-    AudioSegment.probe = _ffprobe_path
-    _log.info(f"ffprobe: {_ffprobe_path}")
-if not _ffmpeg_path:
-    _log.warning("ffmpeg не найден — голосовые сообщения не будут работать")
+    if not _ffprobe_path and _ffmpeg_path:
+        _ffprobe_path = os.path.join(
+            os.path.dirname(_ffmpeg_path),
+            "ffprobe.exe" if os.name == "nt" else "ffprobe"
+        )
+        if not os.path.exists(_ffprobe_path):
+            _ffprobe_path = None
 
+    if _ffmpeg_path:
+        AudioSegment.converter = _ffmpeg_path
+        _log.info(f"ffmpeg: {_ffmpeg_path}")
+    if _ffprobe_path:
+        AudioSegment.probe = _ffprobe_path
+        _log.info(f"ffprobe: {_ffprobe_path}")
+    if not _ffmpeg_path:
+        _log.warning("ffmpeg не найден — голосовые сообщения не будут работать")
+else:
+    _ffmpeg_path = None
+    _ffprobe_path = None
+
+from bot.translations import t
 from bot.utils.voice import speech_to_text, text_to_speech
+from bot.utils.lang import get_lang
 from bot.core.scenarios import answer_info_question
 from bot.database.db import get_or_create_user
 
 router = Router()
-# logger = logging.getLogger(__name__)  # дубликат — используем _log
 
 
 @dataclass
@@ -54,10 +69,8 @@ class VoiceMessage:
     from_user: User
     chat: Chat
     bot: object
-    _answered: bool = False
 
     async def answer(self, text: str, **kwargs):
-        self._answered = True
         return await self.bot.send_message(self.chat.id, text, **kwargs)
 
     async def answer_voice(self, *args, **kwargs):
@@ -67,7 +80,6 @@ class VoiceMessage:
 @router.message(F.voice)
 async def handle_voice(msg: Message, state: FSMContext):
     """Обработка голосовых сообщений"""
-    from bot.handlers.examiner import ExamState
     current_state = await state.get_state()
 
     if current_state and "ExamState" in str(current_state):
@@ -75,8 +87,14 @@ async def handle_voice(msg: Message, state: FSMContext):
         return
 
     user_id = msg.from_user.id
-    tmp_dir = tempfile.mkdtemp()
 
+    if not _VOICE_AVAILABLE:
+        user_data = await get_or_create_user(user_id)
+        lang = get_lang(user_data)
+        await msg.answer(t("voice_error", lang))
+        return
+
+    tmp_dir = tempfile.mkdtemp()
     try:
         file = await msg.bot.get_file(msg.voice.file_id)
         file_path = file.file_path
@@ -89,7 +107,7 @@ async def handle_voice(msg: Message, state: FSMContext):
             audio = AudioSegment.from_ogg(tmp_file)
             audio.export(wav_file, format="wav")
         except Exception as e:
-            logger.warning(f"Ошибка конвертации аудио: {e}")
+            _log.warning(f"Ошибка конвертации аудио: {e}")
             try:
                 import speech_recognition as sr
                 recognizer = sr.Recognizer()
@@ -98,35 +116,38 @@ async def handle_voice(msg: Message, state: FSMContext):
                 text = recognizer.recognize_google(audio, language="ru-RU")
                 wav_file = None
             except Exception:
-                await msg.answer(
-                    "🎤 Не удалось обработать голосовое сообщение.\n"
-                    "Напиши текстом — я обязательно отвечу!"
-                )
+                user_data = await get_or_create_user(user_id)
+                lang = get_lang(user_data)
+                await msg.answer(t("voice_error", lang))
                 return
 
         await msg.bot.send_chat_action(msg.chat.id, "typing")
         if wav_file:
             text = await speech_to_text(wav_file)
-        # text уже может быть установлен из fallback SR выше (строка 98)
 
         if not text:
-            await msg.answer(
-                "🎤 Не удалось распознать речь.\n"
-                "Попробуй говорить чётче или напиши текстом."
-            )
+            user_data = await get_or_create_user(user_id)
+            lang = get_lang(user_data)
+            await msg.answer(t("voice_no_speech", lang))
             return
 
         user_data = await get_or_create_user(user_id)
         scenario = user_data.get("current_scenario", "university")
+        lang = get_lang(user_data)
 
-        answer = await answer_info_question(text, scenario, user_id=user_id)
+        answer = await answer_info_question(text, scenario, user_id=user_id, lang=lang)
+
+        # Переводим ответ если язык не русский
+        if lang != "ru":
+            from bot.utils.translator import translate_text
+            answer = await translate_text(answer, target_lang=lang)
 
         voice_file = await text_to_speech(answer)
 
         if voice_file:
             try:
                 await msg.answer_voice(FSInputFile(voice_file))
-                await msg.answer(f"📝 <b>Текст:</b>\n{answer}", parse_mode="HTML")
+                await msg.answer(t("voice_text_prefix", lang, text=answer), parse_mode="HTML")
             finally:
                 if os.path.exists(voice_file):
                     os.remove(voice_file)
@@ -141,6 +162,12 @@ async def _handle_voice_exam(msg: Message, state: FSMContext):
     """Обработка голосового сообщения в режиме экзаменатора"""
     from bot.handlers.examiner import handle_exam_answer
 
+    if not _VOICE_AVAILABLE:
+        user_data = await get_or_create_user(msg.from_user.id)
+        lang = get_lang(user_data)
+        await msg.answer(t("voice_error", lang))
+        return
+
     tmp_dir = tempfile.mkdtemp()
 
     try:
@@ -154,13 +181,17 @@ async def _handle_voice_exam(msg: Message, state: FSMContext):
             audio = AudioSegment.from_ogg(tmp_file)
             audio.export(wav_file, format="wav")
         except Exception:
-            await msg.answer("🎤 Не удалось обработать голос. Попробуй текстом.")
+            user_data = await get_or_create_user(msg.from_user.id)
+            lang = get_lang(user_data)
+            await msg.answer(t("voice_error", lang))
             return
 
         text = await speech_to_text(wav_file)
 
         if not text:
-            await msg.answer("🎤 Не распознал речь. Попробуй ещё раз или напиши текстом.")
+            user_data = await get_or_create_user(msg.from_user.id)
+            lang = get_lang(user_data)
+            await msg.answer(t("voice_no_speech", lang))
             return
 
         fake_msg = VoiceMessage(

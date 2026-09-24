@@ -26,6 +26,6 @@ def test_prompts_contain_disclaimer():
 def test_prompts_contain_scope_restriction():
     """Тест что промпты ограничивают область ответов"""
     for scenario, prompt in SYSTEM_PROMPTS.items():
-        assert "Не отвечай" in prompt or "не отвечай" in prompt, (
+        assert "ГРАНИЦЫ" in prompt or "специализируюсь" in prompt or "Не отвечай" in prompt, (
             f"Ограничение области отсутствует в сценарии: {scenario}"
         )

@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install "ruff==0.12.4" "mypy==1.15.0"
+
+      - name: Run ruff (lint)
+        run: ruff check .
+
+      - name: Run mypy (type check)
+        run: mypy bot/
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+        env:
+          BOT_TOKEN: "dummy-token-for-ci"
+          GIGACHAT_CREDENTIALS: "dummy-credentials-for-ci"
+          GIGACHAT_MODEL: "GigaChat-2"
+          GIGACHAT_VERIFY_SSL_CERTS: "true"
+          DATABASE_DIR: "database"
+          DATABASE_NAME: "bot.db"
+          LOG_LEVEL: "INFO"

@@ -8,12 +8,12 @@ from bot.config import config
 logger = logging.getLogger(__name__)
 
 DB_PATH = config.DATABASE_DIR / config.DATABASE_NAME
-_db: aiosqlite.Connection | None = None
+_db = None
 _db_lock = asyncio.Lock()
-_DB_VERSION = 2
+_DB_VERSION = 3
 
 
-async def _get_db() -> aiosqlite.Connection:
+async def _get_db():
     """Получить singleton соединение с reconnection"""
     global _db
     async with _db_lock:
@@ -25,7 +25,6 @@ async def _get_db() -> aiosqlite.Connection:
             await _db.execute("PRAGMA journal_mode = WAL")
             logger.info("Соединение с БД установлено")
         else:
-            # Проверяем соединение — если упало, пересоздаём
             try:
                 await _db.execute("SELECT 1")
             except Exception as e:
@@ -56,7 +55,6 @@ async def init_db():
     """Инициализация базы данных + миграции"""
     db = await _get_db()
 
-    # Таблица версий
     await db.execute("""
         CREATE TABLE IF NOT EXISTS db_version (
             version INTEGER PRIMARY KEY
@@ -64,19 +62,16 @@ async def init_db():
     """)
     await db.commit()
 
-    # Текущая версия
     cursor = await db.execute("SELECT version FROM db_version LIMIT 1")
     row = await cursor.fetchone()
     current_version = row["version"] if row else 0
 
     if current_version == 0:
-        # Первоначальная установка
         await _create_tables(db)
         await db.execute("INSERT INTO db_version (version) VALUES (?)", (_DB_VERSION,))
         await db.commit()
         logger.info(f"БД создана (версия {_DB_VERSION})")
     elif current_version < _DB_VERSION:
-        # Миграции
         await _migrate(db, current_version)
         await db.execute("UPDATE db_version SET version = ?", (_DB_VERSION,))
         await db.commit()
@@ -85,7 +80,7 @@ async def init_db():
         logger.info(f"БД актуальна (версия {current_version})")
 
 
-async def _create_tables(db: aiosqlite.Connection):
+async def _create_tables(db):
     """Создать все таблицы"""
     await db.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -95,6 +90,7 @@ async def _create_tables(db: aiosqlite.Connection):
             last_name TEXT,
             voice_enabled INTEGER DEFAULT 0,
             current_scenario TEXT DEFAULT 'university',
+            language TEXT DEFAULT 'ru',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -134,21 +130,26 @@ async def _create_tables(db: aiosqlite.Connection):
     await db.commit()
 
 
-async def _migrate(db: aiosqlite.Connection, from_version: int):
+async def _migrate(db, from_version):
     """Выполнить миграции до целевой версии"""
     if from_version < 2:
-        # Миграция v1 → v2: добавляем индексы
         await db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_answers_user ON case_answers(user_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_answers_session ON case_answers(session_id)")
         logger.info("Миграция v1→v2: добавлены индексы")
 
+    if from_version < 3:
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'ru'")
+            logger.info("Миграция v2→v3: добавлено поле language")
+        except Exception:
+            pass
+
 
 # ─── CRUD ───
 
 
-async def get_or_create_user(user_id: int, username: str = None,
-                              first_name: str = None, last_name: str = None) -> dict:
+async def get_or_create_user(user_id, username=None, first_name=None, last_name=None):
     """Получить или создать пользователя"""
     db = await _get_db()
 
@@ -164,7 +165,7 @@ async def get_or_create_user(user_id: int, username: str = None,
         return dict(row)
 
     await db.execute(
-        "INSERT INTO users (user_id, username, first_name, last_name) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO users (user_id, username, first_name, last_name) VALUES (?, ?, ?, ?)",
         (user_id, username, first_name, last_name),
     )
     await db.commit()
@@ -174,9 +175,9 @@ async def get_or_create_user(user_id: int, username: str = None,
     return dict(row)
 
 
-async def update_user(user_id: int, **kwargs):
+async def update_user(uid, **kwargs):
     """Обновить данные пользователя"""
-    allowed_fields = {"username", "first_name", "last_name", "voice_enabled", "current_scenario"}
+    allowed_fields = {"username", "first_name", "last_name", "voice_enabled", "current_scenario", "language"}
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
     if not updates:
@@ -184,47 +185,46 @@ async def update_user(user_id: int, **kwargs):
 
     db = await _get_db()
     set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [user_id]
+    values = list(updates.values()) + [uid]
     await db.execute(f"UPDATE users SET {set_clause} WHERE user_id = ?", values)
     await db.commit()
 
 
-async def reset_user_progress(user_id: int):
-    """Сбросить прогресс пользователя: ответы на кейсы и сессии"""
+async def reset_progress(uid):
+    """Сбросить прогресс пользователя"""
     db = await _get_db()
-    await db.execute("DELETE FROM case_answers WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM case_answers WHERE user_id = ?", (uid,))
+    await db.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
     await db.execute(
         "UPDATE users SET current_scenario = 'university' WHERE user_id = ?",
-        (user_id,),
+        (uid,),
     )
     await db.commit()
-    logger.info(f"Прогресс сброшен для user={user_id}")
+    logger.info(f"Прогресс сброшен для user={uid}")
 
 
-async def create_session(user_id: int, scenario: str, mode: str, cases_total: int = 0) -> int:
+async def create_session(uid, scenario, mode, cases_total=0):
     """Создать новую сессию"""
     db = await _get_db()
     cursor = await db.execute(
         "INSERT INTO sessions (user_id, scenario, mode, cases_total) VALUES (?, ?, ?, ?)",
-        (user_id, scenario, mode, cases_total),
+        (uid, scenario, mode, cases_total),
     )
     await db.commit()
     return cursor.lastrowid
 
 
-async def end_session(session_id: int, cases_completed: int, avg_score: float):
+async def end_session(sid, cases_completed, avg_score):
     """Завершить сессию"""
     db = await _get_db()
     await db.execute(
         "UPDATE sessions SET cases_completed = ?, avg_score = ?, ended_at = CURRENT_TIMESTAMP WHERE session_id = ?",
-        (cases_completed, avg_score, session_id),
+        (cases_completed, avg_score, sid),
     )
     await db.commit()
 
 
-async def save_case_answer(session_id: int, user_id: int, case_id: str,
-                            scenario: str, user_answer: str, score: int, feedback: str):
+async def save_case_answer(session_id, user_id, case_id, scenario, user_answer, score, feedback):
     """Сохранить ответ на кейс"""
     db = await _get_db()
     await db.execute(
@@ -236,14 +236,14 @@ async def save_case_answer(session_id: int, user_id: int, case_id: str,
     await db.commit()
 
 
-async def get_user_stats(user_id: int) -> dict:
+async def get_user_stats(uid):
     """Получить статистику пользователя"""
     db = await _get_db()
 
     cursor = await db.execute(
         """SELECT COUNT(*) as total_sessions, AVG(avg_score) as avg_score
         FROM sessions WHERE user_id = ? AND cases_completed > 0""",
-        (user_id,),
+        (uid,),
     )
     row = await cursor.fetchone()
 
@@ -251,7 +251,7 @@ async def get_user_stats(user_id: int) -> dict:
         """SELECT scenario, COUNT(*) as sessions, AVG(avg_score) as avg_score
         FROM sessions WHERE user_id = ? AND cases_completed > 0
         GROUP BY scenario""",
-        (user_id,),
+        (uid,),
     )
     scenarios = await cursor.fetchall()
 
@@ -262,10 +262,9 @@ async def get_user_stats(user_id: int) -> dict:
     }
 
 
-async def get_all_users(limit: int = 9999) -> list:
-    """Получить список пользователей (с пагинацией)"""
+async def get_all_users(limit=9999):
+    """Получить список пользователей"""
     db = await _get_db()
-    # Если limit слишком большой — берём всех
     if limit >= 9999:
         cursor = await db.execute("SELECT * FROM users ORDER BY created_at DESC")
     else:
@@ -277,7 +276,7 @@ async def get_all_users(limit: int = 9999) -> list:
     return [dict(r) for r in rows]
 
 
-async def get_case_answers(user_id: int, scenario: str = None) -> list:
+async def get_case_answers(uid, scenario=None):
     """Получить ответы на кейсы пользователя"""
     db = await _get_db()
     if scenario:
@@ -286,7 +285,7 @@ async def get_case_answers(user_id: int, scenario: str = None) -> list:
             JOIN sessions s ON ca.session_id = s.session_id
             WHERE ca.user_id = ? AND ca.scenario = ?
             ORDER BY ca.created_at""",
-            (user_id, scenario),
+            (uid, scenario),
         )
     else:
         cursor = await db.execute(
@@ -294,14 +293,14 @@ async def get_case_answers(user_id: int, scenario: str = None) -> list:
             JOIN sessions s ON ca.session_id = s.session_id
             WHERE ca.user_id = ?
             ORDER BY ca.created_at""",
-            (user_id,),
+            (uid,),
         )
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
 
-async def get_global_stats() -> dict:
-    """Глобальная статистика для админки"""
+async def get_global_stats():
+    """Глобальная статистика"""
     db = await _get_db()
 
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM users")

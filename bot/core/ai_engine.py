@@ -1,6 +1,4 @@
-"""AI-движок — генерация заданий, оценка ответов, работа с GigaChat API.
-написал когда разобрался как GigaChat API работает, до этого долго мучился
-с OpenRouter но он платный оказался"""
+"""AI-движок — генерация заданий, оценка ответов, работа с GigaChat API."""
 
 import logging
 import json
@@ -8,56 +6,52 @@ import re
 import time
 import asyncio
 from gigachat import GigaChatAsyncClient
-from gigachat.models import ChatCompletionRequest, ChatMessage
+from gigachat.models import ChatCompletionRequest, ChatMessage, ChatModelOptions
 from bot.config import config
 
 logger = logging.getLogger(__name__)
 
+
+def _strip_markdown(text: str) -> str:
+    """Убрать markdown-разметку из текста AI"""
+    if not text:
+        return text
+    # Заголовки ## / ### / ####
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Жирный **text** и __text__
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    # Курсив *text* и _text_ (осторожно, не трогать односимвольные)
+    text = re.sub(r'\*{2,}(.+?)\*{2,}', r'\1', text)
+    # Горизонтальные линии ---
+    text = re.sub(r'^---+$', '', text, flags=re.MULTILINE)
+    # Списки - item или * item
+    text = re.sub(r'^[\s]*[-*]\s+', '• ', text, flags=re.MULTILINE)
+    # Убрать пустые строки подряд (макс 2)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
 _client = None
 _client_lock = asyncio.Lock()
 
-# Хранилище последних ответов
-_last_responses = {}  # type: dict[int, list[str]]
+_last_responses = {}
 MAX_HISTORY = 3
 
-# Rate limiting: 5 запросов в минуту на пользователя
-_rate_limits = {}  # type: dict[int, list[float]]
-RATE_LIMIT = 5
-RATE_WINDOW = 60  # секунд
-
-# Время жизни _last_responses — 1 час
-_last_responses_ttl = {}  # type: dict[int, float]
+_last_responses_ttl = {}
 RESPONSES_TTL = 3600
 
-# Счётчик вызовов для периодической очистки
 _cleanup_counter = 0
-_CLEANUP_INTERVAL = 50  # каждые 50 запросов
+_CLEANUP_INTERVAL = 50
 
-# Retry для AI запросов
 MAX_RETRIES = 3
-RETRY_DELAY = 2  # секунд между попытками
+RETRY_DELAY = 2
 
-# Маркеры ошибок — если ответ начинается с них, это не полезный ответ
 _ERROR_MARKERS = (
     "Извини", "Не удалось", "Слишком много", "ошибка",
     "Ошибка", "не могу", "Попробуй позже",
+    "Sorry", "Failed", "Too many", "error", "Error",
+    "can't", "Try again later",
 )
-
-
-def _check_rate_limit(user_id: int) -> bool:
-    """Проверить rate limit для пользователя. True = можно, False = слишком часто"""
-    now = time.time()
-    if user_id not in _rate_limits:
-        _rate_limits[user_id] = []
-
-    # Убираем старые записи
-    _rate_limits[user_id] = [t for t in _rate_limits[user_id] if now - t < RATE_WINDOW]
-
-    if len(_rate_limits[user_id]) >= RATE_LIMIT:
-        return False
-
-    _rate_limits[user_id].append(now)
-    return True
 
 
 def _sanitize_input(text: str) -> str:
@@ -92,20 +86,12 @@ def _sanitize_input(text: str) -> str:
 
 
 def _cleanup_old_data():
-    """Очистить устаревшие данные (вызывать периодически)"""
+    """Очистить устаревшие данные"""
     now = time.time()
-
-    # Очистка _last_responses
     expired_users = [uid for uid, t in _last_responses_ttl.items() if now - t > RESPONSES_TTL]
     for uid in expired_users:
         _last_responses.pop(uid, None)
         _last_responses_ttl.pop(uid, None)
-
-    # Очистка rate limits
-    expired_rates = [uid for uid, times in _rate_limits.items()
-                     if not times or now - times[-1] > RATE_WINDOW * 2]
-    for uid in expired_rates:
-        _rate_limits.pop(uid, None)
 
 
 async def _get_client():
@@ -125,14 +111,6 @@ async def _get_client():
             await _client.__aenter__()
             logger.info("GigaChat клиент готов")
         return _client
-
-
-def _get_recent_responses(user_id: int) -> str:
-    """Получить последние ответы пользователя для антиповтора"""
-    responses = _last_responses.get(user_id, [])
-    if not responses:
-        return ""
-    return "\n".join(f"- {r[:200]}" for r in responses[-MAX_HISTORY:])
 
 
 def _save_response(user_id: int, response: str):
@@ -221,28 +199,26 @@ def _parse_text_response(text: str, case_type: str) -> dict:
     return result
 
 
-async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 2000, user_id: int = None) -> str:
-    """Отправить запрос к AI через GigaChat с rate limiting и retry"""
-    # Rate limit check
-    if user_id and not _check_rate_limit(user_id):
-        logger.warning(f"Rate limit exceeded for user {user_id}")
-        return "Слишком много запросов. Подожди минуту и попробуй снова."
+async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 700, strip_md: bool = False) -> str:
+    """Отправить запрос к AI через GigaChat с retry"""
 
     messages = []
     if system_prompt:
         messages.append(ChatMessage(role="system", content=system_prompt))
     messages.append(ChatMessage(role="user", content=prompt))
 
+    model_options = ChatModelOptions(max_tokens=max_tokens) if max_tokens else None
+
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
             client = await _get_client()
-            chat = ChatCompletionRequest(messages=messages)
+            chat = ChatCompletionRequest(messages=messages, model_options=model_options)
             response = await asyncio.wait_for(client.achat.create(chat), timeout=60)
             raw = response.messages[0].content[0].text
             if raw and raw.strip():
                 logger.debug(f"GigaChat response: {raw[:500]}")
-                return raw
+                return _strip_markdown(raw) if strip_md else raw
             # Пустой ответ — повторяем
             logger.warning(f"GigaChat вернул пустой ответ (попытка {attempt + 1}/{MAX_RETRIES})")
             last_error = "пустой ответ"
@@ -260,7 +236,7 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 2000, u
     return "Извини, AI сейчас перегружен. Попробуй через минуту."
 
 
-async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list = None, case_type: str = "open", user_id: int = None) -> dict:
+async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list = None, case_type: str = "open") -> dict:
     """Сгенерировать задание для экзаменатора с retry"""
     global _cleanup_counter
     _cleanup_counter += 1
@@ -346,7 +322,7 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
     prompts = [prompt, fallback_prompt, fallback_prompt]
 
     for attempt in range(MAX_RETRIES):
-        result = await ask_ai(prompts[attempt], system, user_id=user_id)
+        result = await ask_ai(prompts[attempt], system)
 
         # Если ask_ai вернул ошибку — повторяем
         if any(result.startswith(m) for m in _ERROR_MARKERS):
@@ -383,7 +359,7 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
     }
 
 
-async def evaluate_answer(user_answer: str, case_data: dict, user_id: int = None) -> dict:
+async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
     """Оценить ответ пользователя на задание с retry"""
     global _cleanup_counter
     _cleanup_counter += 1
@@ -396,30 +372,35 @@ async def evaluate_answer(user_answer: str, case_data: dict, user_id: int = None
     system = (
         "Ты — практикующий наставник, оцениваешь ответ на задание. "
         "Пиши как опытный коллега, который даёт обратную связь.\n\n"
-        "ШКАЛА ОЦЕНКИ:\n"
-        "0-2: Абсурд, шутки, не по теме\n"
-        "3-4: Слишком коротко, без сути\n"
-        "5-6: По делу, но нет конкретики\n"
+        "ШКАЛА ОЦЕНКИ (будь мягче):\n"
+        "0-2: ТОЛЬКО абсурд, шутки, одно слово, не по теме\n"
+        "3-4: Ответ пытается помочь, но слишком коротко\n"
+        "5-6: По делу, есть суть\n"
         "7-8: Хорошо, есть конкретные шаги\n"
-        "9-10: Отлично, лучше ожиданий\n\n"
+        "9-10: Отлично, лучше ожиданий\n"
+        "Правило: если человек ПЫТАЕТСЯ ответить по теме — минимум 3 балла.\n\n"
         "При оценивании СРАВНИВАЙ ответ с реальными примерами из базы знаний. "
         "Если ответ похож на типичную ошибку — мягко подскажи как лучше. "
         "Если ответ хороший — приведи пример из практики.\n\n"
         "СТИЛЬ (Stop Slop — анти-AI правила):\n"
+        "- Feedback короткий: 3-4 предложения, один абзац.\n"
         "- НЕ начинай с 'Хороший ответ!', 'Отлично!', 'Интересный подход'. Просто оцени.\n"
         "- НЕ пиши 'Стоит отметить', 'Важно учитывать', 'Необходимо обратить внимание'.\n"
         "- НЕ используй бинарные контрасты: 'Не X, а Y'. Просто скажи Y.\n"
         "- НЕ повторяй вопрос перед ответом.\n"
         "- Конкретика: 'Добавь цифры в резюме' вместо 'Подойдите к этому серьёзно'.\n"
-        "- Пиши ОДНИМ абзацем, без списков. Как будто пишешь другу."
+        "- strengths и weaknesses — максимум 2 пункта, коротко.\n"
+        "- example_answer — 2-3 предложения. source — название.\n"
+        "- Пиши ОДНИМ абзацем, без списков. Как будто пишешь другу.\n"
+        "- Отвечай СПЛОШНЫМ текстом без форматирования. НЕ используй markdown: заголовки (##, ####), разделители (---), жирный (**), списки. Просто текст."
     )
     prompt = (
         f"Задание: {case_data.get('situation', '')}\n"
         f"Вопрос: {case_data.get('question', '')}\n\n"
         f"Ответ человека:\n{user_answer}\n\n"
         f"Очки хорошего ответа: {case_data.get('good_answer_points', [])}\n\n"
-        "Оцени (0-10) и дай обратную связь одним абзацем. "
-        "Сравни с реальными примерами и укажи источник.\n\n"
+        "Оцени (0-10) и дай обратную связь: feedback одним абзацем (3-4 предложения). "
+        "strengths/weaknesses максимум 2 пункта. example 2-3 предложения.\n\n"
         "JSON:\n"
         '{\n'
         '  "score": 7,\n'
@@ -440,7 +421,7 @@ async def evaluate_answer(user_answer: str, case_data: dict, user_id: int = None
     prompts = [prompt, fallback_prompt, fallback_prompt]
 
     for attempt in range(MAX_RETRIES):
-        result = await ask_ai(prompts[attempt], system, user_id=user_id)
+        result = await ask_ai(prompts[attempt], system, max_tokens=600)
 
         if any(result.startswith(m) for m in _ERROR_MARKERS):
             logger.warning(f"evaluate_answer: ошибка от AI (попытка {attempt + 1})")
@@ -481,37 +462,3 @@ async def evaluate_answer(user_answer: str, case_data: dict, user_id: int = None
         "example_answer": "",
         "source": "",
     }
-
-
-async def check_answer_relevance(user_answer: str, case_data: dict, user_id: int = None) -> dict:
-    """Проверить релевантность ответа"""
-    user_answer = _sanitize_input(user_answer)
-
-    system = (
-        "Проверь, является ли ответ адекватным ответом на задание.\n\n"
-        "НЕ релевантно (relevant=false):\n"
-        "- Оскорбления, угрозы, насилие\n"
-        "- Абсурд, провокация, шутки вместо ответа\n"
-        "- Полностью не связано с заданием\n"
-        "- Одно слово без смысла\n\n"
-        "Релевантно (relevant=true):\n"
-        "- Пытается ответить на вопрос\n"
-        "- Есть конкретика или рассуждения\n"
-        "- Серьёзный тон\n\n"
-        'JSON: {"relevant": true/false, "reason": "коротко почему"}'
-    )
-
-    prompt = (
-        f"Задание: {case_data.get('situation', '')}\n"
-        f"Вопрос: {case_data.get('question', '')}\n\n"
-        f"Ответ: {user_answer}\n\n"
-        "Это адекватный ответ?"
-    )
-
-    result = await ask_ai(prompt, system, user_id=user_id)
-    parsed = _parse_json(result, {"relevant": True, "reason": ""})
-
-    if "relevant" not in parsed:
-        parsed = {"relevant": True, "reason": ""}
-
-    return parsed

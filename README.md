@@ -13,32 +13,41 @@ Telegram-бот — AI-тренажёр для абитуриентов и мо�
 - **Голосовой режим:** распознавание речи (STT) и синтез речи (TTS) с нейронными голосами Microsoft
 - **Адаптивное обучение:** бот запоминает ошибки и акцентирует на слабых зонах
 - **Экспорт в PDF:** персональный отчёт с результатами и рекомендациями
-- **База знаний:** 75+ файлов с данными о 20 вузах, 14 компаниях, 30 кейсах
+- **База знаний:** 67 файлов с данными о 20 вузах, 14 компаниях, 30 кейсах
 
 ## Архитектура
 
 ```
 bot/
 ├── core/           # AI-движок, сценарии, RAG, адаптивное обучение
-│   ├── ai_engine.py    # Генерация заданий, оценка ответов (GigaChat API)
-│   ├── scenarios.py    # Системные промпты, информационный режим
-│   ├── rag.py          # Поиск по базе знаний (keyword-based RAG)
-│   └── adaptive.py     # Отслеживание ошибок, персонализация
+│   ├── ai_engine.py        # Генерация заданий, оценка ответов (GigaChat API)
+│   ├── scenarios.py        # Системные промпты, информационный режим
+│   ├── rag.py              # Поиск по базе знаний (keyword-based RAG)
+│   ├── adaptive.py         # Отслеживание ошибок, персонализация
+│   ├── prompt_registry.py  # Реестр версионируемых промптов
+│   └── common_mistakes.py  # Каталог типичных ошибок для адаптивного обучения
 ├── handlers/       # Хендлеры Telegram-бота
 │   ├── start.py        # Приветствие, главное меню, /help, /export
 │   ├── info.py         # Информационный режим (диалог с AI)
 │   ├── examiner.py     # Режим экзаменатора (задания + оценка)
 │   ├── voice.py        # Голосовые сообщения (STT/TTS)
 │   ├── pdf_export.py   # Генерация PDF-отчёта
-│   └── admin.py        # Админ-панель (статистика, рассылка)
+│   └── inline.py       # Inline-кнопки и колбэки
 ├── utils/          # Утилиты
 │   ├── keyboards.py    # Генерация клавиатур
 │   ├── voice.py        # Синтез/распознавание речи (edge-tts, SpeechRecognition)
-│   └── pdf_export.py   # Генерация PDF (fpdf2)
+│   ├── pdf_export.py   # Генерация PDF (fpdf2)
+│   └── translator.py   # Перевод ответов (GigaChat)
 ├── database/       # База данных
 │   └── db.py           # SQLite через aiosqlite
+├── prompts/
+│   └── registry.yaml   # Версионируемые промпты (current + versions)
 ├── config.py       # Конфигурация из .env
-└── main.py         # Запуск бота
+├── translations.py # Локализация (ru/en)
+├── main.py         # Точка входа бота (aiogram Dispatcher)
+└── __init__.py
+tests/            # Pytest-тесты
+main.py           # Запуск бота (entrypoint)
 ```
 
 ## Стек технологий
@@ -76,7 +85,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-4. Установите ffmpeg:
+4. Установите ffmpeg (опционально — без него голосовой режим деградирует, текстовый работает):
 ```bash
 # Windows
 winget install Gyan.FFmpeg
@@ -93,11 +102,17 @@ brew install ffmpeg
 cp .env.example .env
 ```
 
-6. Заполните `.env` вашими данными:
+6. Заполните `.env` вашими данными (все ключи из `.env.example`):
 ```
 BOT_TOKEN=ваш_токен_бота
-GIGACHAT_CREDENTIALS=ваш_API_ключ_GigaChat
 ADMIN_IDS=id_админа
+GIGACHAT_CREDENTIALS=ваш_API_ключ_GigaChat
+GIGACHAT_MODEL=GigaChat-2
+GIGACHAT_VERIFY_SSL_CERTS=true
+DATABASE_DIR=./database
+DATABASE_NAME=bot.db
+LOG_LEVEL=INFO
+LOG_FILE=bot.log
 ```
 
 7. Запустите бота:
@@ -105,22 +120,17 @@ ADMIN_IDS=id_админа
 python main.py
 ```
 
-### Деплой на Railway / Render / Fly.io
+### Деплой на Render
+
+Проект настроен для деплоя на Render через `render.yaml` (worker, free plan, диск 1 GB на `/database`).
 
 1. Загрузите код на GitHub
-
-2. Создайте проект на Railway (или другой платформе)
-
-3. Подключите репозиторий
-
-4. Добавьте переменные окружения в Dashboard:
-```
-BOT_TOKEN=ваш_токен
-GIGACHAT_CREDENTIALS=ваш_ключ
-ADMIN_IDS=id_админа
-```
-
-5. Платформа автоматически соберёт Docker-образ и запустит бота
+2. В Render: New → Blueprint → подключите репозиторий
+3. Добавьте секреты в Dashboard (sync: false):
+   - `BOT_TOKEN`
+   - `GIGACHAT_CREDENTIALS`
+   - `ADMIN_IDS`
+4. Render автоматически соберёт и запустит worker по `render.yaml`
 
 ## Команды бота
 
@@ -129,14 +139,17 @@ ADMIN_IDS=id_админа
 | `/start` | Приветствие и главное меню |
 | `/help` | Справка по функциям бота |
 | `/export` | Генерация PDF-отчёта с результатами |
-| `/disclaimer` | Дисклеймер |
+
+`/disclaimer` доступен в чате (обрабатывается вместе с `/help`), в Telegram-меню не зарегистрирован.
 
 ## Тесты
 
 ```bash
-python -m pytest tests/ -v
+.venv\Scripts\python.exe -m pytest tests/ -q
 ```
 
 ## Лицензия
+
+MIT — см. LICENSE.
 
 Проект создан для участия в конкурсе **SK Kids Challenge** от компании **Софтлайн Решения**.

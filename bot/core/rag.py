@@ -5,7 +5,6 @@
 import logging
 import re
 import math
-import asyncio
 from collections import Counter
 from bot.config import config
 
@@ -164,7 +163,7 @@ def search(query: str, k: int = 5, source_type: str = None) -> list:
     return results
 
 
-def rebuild_index():
+async def rebuild_index():
     """Очистить кэш (для перезагрузки)"""
     global _documents, _doc_freq, _total_docs
     _documents = []

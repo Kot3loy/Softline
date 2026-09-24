@@ -1,38 +1,26 @@
-"""Integration test — проверяет что все модули импортируются без ошибок.
-
-Этот тест повторяет цепочку импортов из bot/main.py:155:
-    from bot.handlers import start, info, examiner, voice, pdf_export, admin
-
-Если этот тест падает — бот не запустится.
-"""
+"""Integration test — проверяет что все модули импортируются без ошибок."""
 
 import importlib
 import pytest
 
 
-# Все модули которые импортируются при реальном запуске бота
-# Порядок важен — как в bot/main.py
 ALL_MODULES = [
-    # Конфиг и БД
     "bot.config",
     "bot.database.db",
-    # Ядро
     "bot.core.ai_engine",
     "bot.core.rag",
     "bot.core.adaptive",
     "bot.core.scenarios",
     "bot.core.common_mistakes",
-    # Утилиты
     "bot.utils.keyboards",
     "bot.utils.voice",
     "bot.utils.pdf_export",
-    # Хендлеры (именно в этом порядке как в main.py)
     "bot.handlers.start",
     "bot.handlers.info",
     "bot.handlers.examiner",
     "bot.handlers.voice",
     "bot.handlers.pdf_export",
-    "bot.handlers.admin",
+    "bot.handlers.inline",
 ]
 
 
@@ -51,16 +39,15 @@ def test_all_modules_import():
 
 
 def test_main_py_import_chain():
-    """Повторяет точную цепочку импортов из bot/main.py:155"""
-    from bot.handlers import start, info, examiner, voice, pdf_export, admin
+    """Повторяет цепочку импортов из bot/main.py"""
+    from bot.handlers import start, info, examiner, voice, pdf_export, inline
 
-    # Все роутеры должны иметь атрибут router
     assert hasattr(start, "router")
     assert hasattr(info, "router")
     assert hasattr(examiner, "router")
     assert hasattr(voice, "router")
     assert hasattr(pdf_export, "router")
-    assert hasattr(admin, "router")
+    assert hasattr(inline, "router")
 
 
 def test_main_function_callable():

@@ -1,79 +1,39 @@
+# -*- coding: utf-8 -*-
 """Сценарии бота — системные промпты, информационный режим, приветственные сообщения."""
 
 import logging
 import asyncio
+from bot.translations import t
 from bot.core.ai_engine import ask_ai, _save_response
 from bot.core.rag import search
+from bot.core.prompt_registry import prompt_registry
 
 logger = logging.getLogger(__name__)
 
-# Общий стиль письма для всех ответов (включает Stop Slop — анти-AI правила)
-STYLE_RULES = (
-    "СТИЛЬ ОБЩЕНИЯ (обязательно для всех ответов):\n"
-    "- Пиши на русском языке, как друг студенту или молодому специалисту.\n"
-    "- Будь конкретным — давай actionable советы, а не общие фразы.\n"
-    "- Используй разговорный язык: 'слушай', 'короче', 'суть в том', 'на практике'.\n"
-    "- Говори на ты.\n"
-    "- Отвечай по делу, без воды. Максимально полезно за минимум слов.\n"
-    "- Максимум 4-5 предложений на ответ. Не пиши простыни.\n"
-    "- Если не знаешь — скажи честно, не выдумывай.\n\n"
-    "АНТИ-AI ПРАВИЛА (Stop Slop — убираем AI-шаблоны):\n"
-    "- НЕ начинай с: 'Конечно!', 'Отличный вопрос!', 'Давайте разберём', "
-    "'Вот что можно улучшить', 'Хороший вопрос', 'С радостью помогу'. Просто отвечай.\n"
-    "- НЕ пиши: 'В рамках...', 'В контексте...', 'Согласно...', 'Стоит отметить', "
-    "'Важно отметить', 'Необходимо учитывать'. Это канцелярит.\n"
-    "- НЕ используй бинарные контрасты: 'Не X, а Y'. Просто скажи Y.\n"
-    "- НЕ перечисляй через запятую что НЕ делает ('не это, не то, не вот'). Говори что делает.\n"
-    "- НЕ пиши 'Вот как это работает:' или 'Вот что я имею в виду:'. Просто покажи.\n"
-    "- НЕ ставь восклицательные знаки без причины. Одного достаточно.\n"
-    "- НЕ используй: 'на самом деле', 'по сути', 'фактически', 'безусловно', 'несомненно'.\n"
-    "- НЕ начинай предложения с 'Что', 'Как', 'Почему', 'Где', 'Когда'. Начинай с подлежащего.\n"
-    "- НЕ пиши 'Итак:', 'Так:', 'Короче:', 'Слушай,' в начале ответа.\n"
-    "- НЕ повторяй вопрос пользователя перед ответом. Просто отвечай.\n"
-    "- Используй активный залог: 'Ты делаешь' вместо 'Это делается'.\n"
-    "- Конкретика > абстракции: 'Напиши README к проекту' вместо 'Подойдите к этому серьёзно'."
-)
-
-# Системные промпты для каждого сценария
-SYSTEM_PROMPTS = {
-    "university": (
-        STYLE_RULES
-        + "Ты — опытный наставник, который помогает школьникам и студентам "
-        "разобраться с поступлением, выбором вуза и специальности. "
-        "Ты знаешь реальную картину: проходные баллы, конкуренцию, подводные камни. "
-        "Отвечай конкретно, с цифрами и примерами когда можно.\n\n"
-        "ГРАНИЦЫ: Если вопрос НЕ про поступление, вузы, специальности, ЕГЭ/ОГЭ, "
-        "студенческую жизнь — вежливо скажи: "
-        "\"Я помогаю только с выбором вуза и поступлением. Задай вопрос про вуз или поступление.\" "
-        "Не отвечай на вопросы про работу, код, медицину и т.д."
-    ),
-    "job": (
-        STYLE_RULES
-        + "Ты — HR-эксперт и карьерный консультант. Помогаешь найти работу или стажировку, "
-        "подготовиться к собеседованию, составить резюме. "
-        "Ты знаешь как устроен найм изнутри: что реально смотрят рекрутеры, "
-        "какие ошибки убивают шансы, что выделяет кандидата. "
-        "Давай практические советы, а не общие фразы.\n\n"
-        "ГРАНИЦЫ: Если вопрос НЕ про работу, собеседование, резюме, карьеру, стажировку — "
-        "вежливо скажи: "
-        "\"Я помогаю только с поиском работы и карьерой. Задай вопрос про собеседование, резюме или трудоустройство.\" "
-        "Не отвечай на вопросы про вузы, код, медицину и т.д."
-    ),
-    "adaptation": (
-        STYLE_RULES
-        + "Ты — опытный сотрудник, который прошёл путь новичка в нескольких компаниях. "
-        "Помогаешь адаптироваться: как задавать вопросы, как общаться с руководителем, "
-        "как не перегрузить себя на первых неделях, как понять корпоративную культуру. "
-        "Давай конкретные фразы и скрипты, которые можно использовать.\n\n"
-        "ГРАНИЦЫ: Если вопрос НЕ про адаптацию, общение с коллегами, рабочий этикет — "
-        "вежливо скажи: "
-        "\"Я помогаю только с адаптацией в компании. Задай вопрос про общение с коллегами или работу.\" "
-        "Не отвечай на вопросы про вузы, код, медицину и т.д."
-    ),
-}
+# Backward compatibility aliases
+SYSTEM_PROMPTS = {}
+STYLE_RULES = ""
 
 
-async def answer_info_question(question: str, scenario: str, user_id: int = None) -> str:
+async def _get_prompt(name: str) -> str:
+    """Получить промпт из реестра"""
+    content = prompt_registry.get_content(name)
+    if content is None:
+        logger.warning(f"Промпт {name} не найден в реестре")
+        return ""
+    return content
+
+
+# Системные промпты для каждого сценария (загружаются из реестра)
+async def _get_system_prompts():
+    return {
+        "university": await _get_prompt("university"),
+        "job": await _get_prompt("job"),
+        "adaptation": await _get_prompt("adaptation"),
+    }
+
+
+async def answer_info_question(question: str, scenario: str, user_id: int = None, lang: str = "ru") -> str:
     """Ответить на вопрос в информационном режиме (RAG + AI)"""
     # Ищем релевантные документы (sync → async)
     docs = await asyncio.to_thread(search, question, 3, None)
@@ -81,30 +41,36 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
     # Формируем контекст из найденных документов
     context = ""
     if docs:
-        context = "Релевантная информация из базы знаний:\n\n"
+        context = t("rag_relevant_info", lang) + "\n\n"
         for i, doc in enumerate(docs, 1):
             source = doc.metadata.get("source", "Неизвестно")
-            content = doc.page_content[:1000]  # Ограничиваем длину
+            content = doc.page_content[:1000]
             context += f"{i}. Источник: {source}\n{content}\n\n"
 
     # Формируем промпт
-    system = SYSTEM_PROMPTS.get(scenario, SYSTEM_PROMPTS["university"])
+    system_prompts = await _get_system_prompts()
+    system = system_prompts.get(scenario, await _get_prompt("university"))
 
     if context:
         prompt = (
-            f"Вопрос пользователя: {question}\n\n"
-            f"{context}\n\n"
-            "Ответь на вопрос, используя информацию из базы знаний. "
-            "Если информации недостаточно — дополните из своих знаний, но отметите это."
+            "User question: {question}\n\n"
+            "{context}\n\n"
+            "{rag_use}"
+        ).format(
+            question=question,
+            context=context,
+            rag_use=t("rag_use_context", lang)
         )
     else:
         prompt = (
-            f"Вопрос пользователя: {question}\n\n"
-            "В базе знаний нет релевантной информации. "
-            "Ответь из своих знаний, но предупреди, что это общая рекомендация."
+            "User question: {question}\n\n"
+            "{rag_no}"
+        ).format(
+            question=question,
+            rag_no=t("rag_no_context", lang)
         )
 
-    answer = await ask_ai(prompt, system)
+    answer = await ask_ai(prompt, system, max_tokens=700, strip_md=True)
 
     # Сохраняем ответ в историю для антиповтора
     if user_id:
@@ -113,35 +79,50 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
     return answer
 
 
-async def get_welcome_message(scenario: str) -> str:
+async def get_welcome_message(scenario: str, lang: str = "ru") -> str:
     """Приветственное сообщение для сценария"""
-    system = SYSTEM_PROMPTS.get(scenario, SYSTEM_PROMPTS["university"])
+    welcome_key = f"welcome_{scenario}"
+    welcome_text = await _get_prompt(welcome_key)
 
-    messages = {
-        "university": (
-            "Привет! Я помогу тебе с выбором вуза. "
-            "Задай мне вопрос о поступлении, специальностях или университетах. "
-            "Например:\n"
-            "• Какие документы нужны для поступления?\n"
-            "• Чем МГУ отличается от ВШЭ?\n"
-            "• Какой средний балл нужен для бюджета?"
-        ),
-        "job": (
-            "Привет! Я помогу тебе найти работу или стажировку. "
-            "Задай мне вопрос о собеседовании, резюме или карьере. "
-            "Например:\n"
-            "• Как написать хорошее резюме?\n"
-            "• Как подготовиться к техническому собеседованию?\n"
-            "• Какие навыки нужны для junior-разработчика?"
-        ),
-        "adaptation": (
-            "Привет! Я помогу тебе адаптироваться в компании. "
-            "Задай мне вопрос о корпоративной культуре, общении с коллегами или работе. "
-            "Например:\n"
-            "• Как познакомиться с коллективом?\n"
-            "• Как правильно задавать вопросы?\n"
-            "• Как управлять своим временем?"
-        ),
-    }
+    if not welcome_text:
+        messages = {
+            "university": t("welcome_university", lang),
+            "job": t("welcome_job", lang),
+            "adaptation": t("welcome_adaptation", lang),
+        }
+        return messages.get(scenario, messages["university"])
 
-    return messages.get(scenario, messages["university"])
+    return welcome_text
+
+
+# Инициализация обратной совместимости (синхронная загрузка из YAML)
+import yaml
+from pathlib import Path
+
+_REGISTRY_PATH = Path(__file__).parent.parent / "prompts" / "registry.yaml"
+
+def _load_prompts_sync():
+    """Синхронная загрузка промптов из YAML для обратной совместимости"""
+    global SYSTEM_PROMPTS, STYLE_RULES
+    try:
+        with open(_REGISTRY_PATH, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        
+        prompts = data.get("prompts", {})
+        SYSTEM_PROMPTS = {}
+        for name in ("university", "job", "adaptation"):
+            prompt_data = prompts.get(name, {}).get("versions", [])
+            if prompt_data:
+                SYSTEM_PROMPTS[name] = prompt_data[0].get("content", "")
+        
+        # STYLE_RULES — первая часть промпта university до ДИСКЛЕЙМЕР
+        uni_content = SYSTEM_PROMPTS.get("university", "")
+        STYLE_RULES = uni_content.split("ДИСКЛЕЙМЕР")[0] if "ДИСКЛЕЙМЕР" in uni_content else uni_content
+    except Exception as e:
+        logger.warning(f"Не удалось загрузить промпты для совместимости: {e}")
+        SYSTEM_PROMPTS = {}
+        STYLE_RULES = ""
+
+
+# Загружаем при импорте
+_load_prompts_sync()

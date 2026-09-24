@@ -1,2 +1,31 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+  "E402",  # module level import not at top (scenarios.py mid-file imports intentional legacy)
+  "E501",  # line too long — legacy lines exceed 100; mass rewrap forbidden in this task
+  "I001",  # import block unsorted — mass re-sort forbidden in this task
+  "W292",  # no newline at EOF — mass fix forbidden in this task
+  "W293",  # blank line whitespace — mass fix forbidden in this task
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402", "F401"]
+"bot/translations.py" = ["F401"]
+"bot/core/prompt_registry.py" = ["F401"]
+"bot/core/rag.py" = ["F401"]
+"bot/handlers/inline.py" = ["F401"]
+"bot/handlers/voice.py" = ["F401"]
+"bot/utils/pdf_export.py" = ["F401", "F811"]  # Path shadowed by local import in _find_font
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = false
+allow_untyped_defs = true

@@ -22,9 +22,14 @@ def test_settings_kb():
     # Голос выключен
     kb = settings_kb(voice_enabled=False)
     assert kb is not None
-    assert len(kb.inline_keyboard) == 4  # голос, сброс прогресса, о боте, назад
+    assert len(kb.inline_keyboard) == 4  # голос, язык (2 кнопки), о боте, назад
     assert "Выкл" in kb.inline_keyboard[0][0].text
-    assert "Сбросить" in kb.inline_keyboard[1][0].text
+    # Язык — строка с двумя кнопками
+    lang_row = kb.inline_keyboard[1]
+    assert len(lang_row) == 2
+    lang_texts = [b.text for b in lang_row]
+    assert any("RU" in t for t in lang_texts)
+    assert any("EN" in t for t in lang_texts)
 
     # Голос включён
     kb = settings_kb(voice_enabled=True)
@@ -61,7 +66,7 @@ def test_case_answer_kb():
 def test_choice_answer_kb():
     """Тест клавиатуры выбора ответа (4 варианта A/B/C/D)"""
     options = ["Вариант A", "Вариант B", "Вариант C", "Вариант D"]
-    kb = choice_answer_kb(options, 1, 5)
+    kb = choice_answer_kb(options)
     assert kb is not None
     assert len(kb.inline_keyboard) == 4  # 4 кнопки
 

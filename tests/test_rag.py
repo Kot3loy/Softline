@@ -50,19 +50,35 @@ def test_score_empty():
 
 
 def test_search_returns_results():
-    """Тест что поиск возвращает результаты"""
+    """Поиск: непустой результат, скоринг по убыванию, все score > 0"""
     results = search("университет поступление", k=3)
     assert isinstance(results, list)
+    assert len(results) > 0
+    assert all(hasattr(r, "page_content") for r in results)
+    assert all(r.metadata.get("source") for r in results)
+
+    query_tokens = _tokenize("университет поступление")
+    scores = [_score(query_tokens, _tokenize(r.page_content)) for r in results]
+    assert scores[0] > 0
+    assert scores == sorted(scores, reverse=True)
 
 
-def test_rebuild_index():
+@pytest.mark.asyncio
+async def test_rebuild_index():
     """Тест очистки кэша"""
-    rebuild_index()
+    await rebuild_index()
     from bot.core.rag import _documents
     assert len(_documents) == 0
 
 
 def test_search_source_type_filter():
-    """Тест фильтрации по типу источника"""
-    results = search("работа собеседование", k=3, source_type="companies")
+    """Фильтр source_type: только нужный тип, порядок скоринга сохранён"""
+    results = search("стажировка компания", k=3, source_type="companies")
     assert isinstance(results, list)
+    assert len(results) > 0
+    assert all(r.metadata["source_type"] == "companies" for r in results)
+
+    query_tokens = _tokenize("стажировка компания")
+    scores = [_score(query_tokens, _tokenize(r.page_content)) for r in results]
+    assert scores[0] > 0
+    assert scores == sorted(scores, reverse=True)

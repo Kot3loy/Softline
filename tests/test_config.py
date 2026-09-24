@@ -11,7 +11,6 @@ def test_config_loads():
 def test_config_paths():
     """Тест что пути настроены"""
     assert config.DATA_DIR.exists()
-    assert config.CHROMA_DIR is not None
     assert config.DATABASE_DIR is not None
 
 

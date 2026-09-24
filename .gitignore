@@ -11,11 +11,12 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.venv/
 
 # Database
 *.db
 *.db-journal
-database/
+/database/
 
 # Logs
 *.log
@@ -23,8 +24,11 @@ database/
 # ChromaDB
 chroma_db/
 
-# OpenCode (AI assistant)
+# OpenCode (AI assistant) — never commit, never push
 .opencode/
+
+# Superpowers SDD workspace
+.superpowers/
 
 # IDE
 .vscode/

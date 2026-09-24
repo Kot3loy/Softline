@@ -5,6 +5,7 @@ import json
 import tempfile
 import os
 from bot.config import config
+from bot.translations import t
 
 logger = logging.getLogger(__name__)
 
@@ -135,19 +136,19 @@ SCENARIO_NAMES = {
 }
 
 
-def get_recommendations(user_id: int, scenario: str) -> list:
+def get_recommendations(user_id: int, scenario: str, lang: str = "ru") -> list:
     """Получить рекомендации для улучшения"""
     weak_areas = get_weak_areas(user_id, scenario)
     friendly = SCENARIO_NAMES.get(scenario, scenario)
 
     recommendations = []
     for area in weak_areas[:3]:
-        case_id = area.get("case_id", "неизвестно")
+        case_id = area.get("case_id", "unknown")
         recommendations.append(
-            f"Задание «{case_id}» ({friendly}) — средний балл {area['avg_score']:.1f}, повтори его"
+            t("adaptive_recommendation", lang, case_id=case_id, friendly=friendly, score=area['avg_score'])
         )
 
     if not recommendations:
-        recommendations.append("Отлично! У тебя нет слабых областей в этом сценарии.")
+        recommendations.append(t("adaptive_no_weak", lang))
 
     return recommendations

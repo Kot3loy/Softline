@@ -1,7 +1,10 @@
 import logging
-from fpdf import FPDF
+import time
 from pathlib import Path
+from fpdf import FPDF
 from bot.config import config
+from bot.translations import t
+from bot.core.adaptive import get_recommendations
 
 logger = logging.getLogger(__name__)
 
@@ -9,39 +12,44 @@ logger = logging.getLogger(__name__)
 class PDFReport(FPDF):
     """Класс для генерации PDF-отчётов"""
 
-    _use_dejavu = False  # флаг — зарегистрирован ли DejaVu
+    _use_dejavu = False
+
+    def __init__(self, lang="ru"):
+        super().__init__()
+        self.lang = lang
 
     def header(self):
         font = "DejaVu" if self._use_dejavu else "Helvetica"
         self.set_font(font, "B", 16)
-        self.cell(0, 10, "AI-наставник: Отчёт", align="C")
+        title = "AI-mentor: Report" if self.lang == "en" else "AI-наставник: Отчёт"
+        self.cell(0, 10, title, align="C")
         self.ln(10)
 
     def footer(self):
         self.set_y(-15)
         font = "DejaVu" if self._use_dejavu else "Helvetica"
         self.set_font(font, "I", 8)
-        self.cell(0, 10, f"Стр. {self.page_no()}", align="C")
+        page_text = f"Page {self.page_no()}" if self.lang == "en" else f"Стр. {self.page_no()}"
+        self.cell(0, 10, page_text, align="C")
 
-    def chapter_title(self, title: str):
+    def chapter_title(self, title):
         font = "DejaVu" if self._use_dejavu else "Helvetica"
         self.set_font(font, "B", 14)
         self.cell(0, 10, title)
         self.ln(10)
 
-    def chapter_body(self, body: str):
+    def chapter_body(self, body):
         font = "DejaVu" if self._use_dejavu else "Helvetica"
         self.set_font(font, "", 11)
         self.multi_cell(0, 7, body)
         self.ln(3)
 
-    def add_score(self, label: str, score: int, max_score: int = 10):
+    def add_score(self, label, score, max_score=10):
         font = "DejaVu" if self._use_dejavu else "Helvetica"
         self.set_font(font, "B", 11)
         self.cell(0, 7, f"{label}: {score}/{max_score}")
         self.ln(7)
 
-        # Прогресс-бар
         bar_width = 100
         filled = (score / max_score) * bar_width
         self.set_fill_color(200, 200, 200)
@@ -51,124 +59,139 @@ class PDFReport(FPDF):
         self.ln(8)
 
 
-def generate_report(user_id: int, scenario: str, results: list, case_answers: list = None) -> str:
-    """Сгенерировать PDF-отчёт"""
-    import time
-    from bot.core.adaptive import get_recommendations
-
+def _find_font():
+    """Находит путь к шрифту с поддержкой кириллицы"""
     font_paths = [
+        # DejaVu — отличная поддержка кириллицы
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "C:/Windows/Fonts/dejavu-sans.ttf",
-        "C:/Windows/Fonts/arial.ttf",
         "/System/Library/Fonts/DejaVuSans.ttf",
+        # Arial — поддерживает кириллицу на Windows
+        "C:/Windows/Fonts/arial.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
     ]
-    font_path = None
     for p in font_paths:
         if Path(p).exists():
-            font_path = Path(p)
-            break
+            return Path(p)
+    return None
 
-    if not font_path:
-        logger.warning("Шрифт не найден, пробуем встроенный шрифт FPDF")
-        # Если шрифт не найден — используем встроенный шрифт FPDF (latin-1)
-        # Кириллица может отображаться некорректно, но PDF не крашнется
-        pdf = PDFReport()
-        pdf.add_page()
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, "Report", align="C")
-        pdf.ln(10)
-        pdf.set_font("Helvetica", "", 11)
-        pdf.multi_cell(0, 7, "Font not found. Install DejaVu Sans for proper Russian text rendering.")
-        output_dir = config.DATA_DIR / "reports"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = int(time.time())
-        output_path = output_dir / f"report_{user_id}_{scenario}_{timestamp}.pdf"
-        pdf.output(str(output_path))
-        return str(output_path)
 
-    pdf = PDFReport()
-    pdf._use_dejavu = True
-    pdf.add_font("DejaVu", "", str(font_path), uni=True)
-    pdf.add_font("DejaVu", "B", str(font_path), uni=True)
-    pdf.add_font("DejaVu", "I", str(font_path), uni=True)
+def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
+    """Сгенерировать PDF-отчёт"""
+    font_path = _find_font()
+    use_dejavu = font_path is not None
+
+    pdf = PDFReport(lang=lang)
+    pdf._use_dejavu = use_dejavu
+    if use_dejavu:
+        pdf.add_font("DejaVu", "", str(font_path), uni=True)
+        pdf.add_font("DejaVu", "B", str(font_path), uni=True)
+        pdf.add_font("DejaVu", "I", str(font_path), uni=True)
+    else:
+        logger.warning("Шрифт DejaVu не найден, используем встроенный Helvetica")
+
     pdf.add_page()
 
-    # Заголовок
+    # Сценарий
     scenario_names = {
-        "university": "Выбор вуза",
-        "job": "Поиск работы",
-        "adaptation": "Адаптация в компании",
+        "university": t("btn_university", lang).lstrip("🎓 "),
+        "job": t("btn_job", lang).lstrip("💼 "),
+        "adaptation": t("btn_adaptation", lang).lstrip("🤝 "),
     }
-    pdf.chapter_title(f"Сценарий: {scenario_names.get(scenario, scenario)}")
+    chapter_label = "Scenario" if lang == "en" else "Сценарий"
+    pdf.chapter_title(f"{chapter_label}: {scenario_names.get(scenario, scenario)}")
 
-    # Детали по заданиям из БД
+    # Детали по заданиям
     if case_answers:
         total_score = sum(a.get("score", 0) for a in case_answers)
         avg_score = total_score / max(len(case_answers), 1)
 
-        pdf.add_score("Средний балл", round(avg_score))
+        avg_label = "Average score" if lang == "en" else "Средний балл"
+        pdf.add_score(avg_label, round(avg_score))
         pdf.ln(5)
 
-        pdf.chapter_title("Детали по заданиям:")
+        details_label = "Task details:" if lang == "en" else "Детали по заданиям:"
+        pdf.chapter_title(details_label)
         for i, answer in enumerate(case_answers, 1):
             score = answer.get("score", 0)
-            feedback = answer.get("feedback", "Нет обратной связи")
+            feedback = answer.get("feedback", "")
             case_id = answer.get("case_id", f"#{i}")
 
-            pdf.set_font("DejaVu", "B", 11)
-            pdf.cell(0, 7, f"Задание {i} ({case_id}): {score}/10")
+            task_label = "Task" if lang == "en" else "Задание"
+            pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "B", 11)
+            pdf.cell(0, 7, f"{task_label} {i} ({case_id}): {score}/10")
             pdf.ln(7)
-            pdf.set_font("DejaVu", "", 10)
+            pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "", 10)
             pdf.multi_cell(0, 6, feedback)
             pdf.ln(2)
     elif results:
         total_score = sum(r.get("score", 0) for r in results)
         avg_score = total_score / max(len(results), 1)
 
-        pdf.add_score("Средний балл", round(avg_score))
+        avg_label = "Average score" if lang == "en" else "Средний балл"
+        pdf.add_score(avg_label, round(avg_score))
         pdf.ln(5)
 
-        pdf.chapter_title("Детали:")
+        details_label = "Details:" if lang == "en" else "Детали:"
+        pdf.chapter_title(details_label)
         for i, result in enumerate(results, 1):
             score = result.get("score", 0)
-            feedback = result.get("feedback", "Нет обратной связи")
-            pdf.set_font("DejaVu", "B", 11)
-            pdf.cell(0, 7, f"Задание {i}: {score}/10")
+            feedback = result.get("feedback", "")
+            task_label = "Task" if lang == "en" else "Задание"
+            pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "B", 11)
+            pdf.cell(0, 7, f"{task_label} {i}: {score}/10")
             pdf.ln(7)
-            pdf.set_font("DejaVu", "", 10)
+            pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "", 10)
             pdf.multi_cell(0, 6, feedback)
             pdf.ln(2)
     else:
-        pdf.chapter_body("Пока нет результатов. Пройди хотя бы одно задание!")
+        no_results = t("pdf_no_results", lang)
+        pdf.chapter_body(no_results)
 
-    # Персонализированные рекомендации
+    # Рекомендации
     pdf.add_page()
-    pdf.chapter_title("Рекомендации")
+    recs_label = "Recommendations" if lang == "en" else "Рекомендации"
+    pdf.chapter_title(recs_label)
 
-    # Получаем персонализированные рекомендации из системы адаптивного обучения
-    recs = get_recommendations(user_id, scenario)
+    recs = get_recommendations(user_id, scenario, lang)
     if recs:
         recs_text = "\n".join(f"• {r}" for r in recs)
         pdf.chapter_body(recs_text)
     else:
-        # Общие рекомендации если персонализированных нет
-        pdf.chapter_body(
-            "1. Повтори задания с низким баллом\n"
-            "2. Обрати внимание на типичные ошибки\n"
-            "3. Практикуйся регулярно\n"
-            "4. Задавай вопросы в информационном режиме"
-        )
+        if lang == "en":
+            pdf.chapter_body(
+                "1. Review tasks with low scores\n"
+                "2. Pay attention to typical mistakes\n"
+                "3. Practice regularly\n"
+                "4. Ask questions in info mode"
+            )
+        else:
+            pdf.chapter_body(
+                "1. Повтори задания с низким баллом\n"
+                "2. Обрати внимание на типичные ошибки\n"
+                "3. Практикуйся регулярно\n"
+                "4. Задавай вопросы в информационном режиме"
+            )
 
     # Источники
-    pdf.chapter_body(
-        "\nИсточники:\n"
-        "• Официальные сайты вузов и компаний\n"
-        "• Отзывы студентов и сотрудников (habr.com, vc.ru)\n"
-        "• Статьи по профориентации (ria.ru, lenta.ru)\n"
-        "• Академическая литература по карьерному консультированию"
-    )
+    if lang == "en":
+        pdf.chapter_body(
+            "\nSources:\n"
+            "- Official university and company websites\n"
+            "- Student and employee reviews (habr.com, vc.ru)\n"
+            "- Career guidance articles (ria.ru, lenta.ru)\n"
+            "- Academic literature on career consulting"
+        )
+    else:
+        pdf.chapter_body(
+            "\nИсточники:\n"
+            "• Официальные сайты вузов и компаний\n"
+            "• Отзывы студентов и сотрудников (habr.com, vc.ru)\n"
+            "• Статьи по профориентации (ria.ru, lenta.ru)\n"
+            "• Академическая литература по карьерному консультированию"
+        )
 
-    # Сохраняем с уникальным именем (timestamp)
     output_dir = config.DATA_DIR / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = int(time.time())
