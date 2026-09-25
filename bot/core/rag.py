@@ -15,9 +15,9 @@ _STOP_WORDS = {
     "какой", "какая", "какие", "чтобы", "можно", "нужно", "дела", "привет",
 }
 
-_documents = []  # тут все документы хранятся после загрузки
-_doc_freq = {}  # word -> number of documents containing it
-_total_docs = 0
+_documents: list[dict] = []  # тут все документы хранятся после загрузки
+_doc_freq: dict[str, int] = {}  # word -> number of documents containing it
+_total_docs: int = 0
 
 
 def _load_documents() -> list:
@@ -150,7 +150,7 @@ def _score(query_tokens: list, doc_tokens: list) -> float:
     return score
 
 
-def search(query: str, k: int = 5, source_type: str = None) -> list:
+def search(query: str, k: int = 5, source_type: str | None = None) -> list:
     """Поиск по базе знаний (keyword-based)"""
     docs = _load_documents()
     if not docs:

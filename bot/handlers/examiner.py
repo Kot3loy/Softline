@@ -28,7 +28,7 @@ class ExamState(StatesGroup):
 
 # Сессии экзамена (в памяти)
 MAX_EXAM_SESSIONS = 1000
-exam_sessions = {}  # user_id -> {scenario, cases, current, session_id, answers, timestamp}
+exam_sessions: dict[int, dict] = {}  # user_id -> {scenario, cases, current, session_id, answers, timestamp}
 
 
 def _cleanup_expired_sessions():
@@ -92,6 +92,8 @@ async def cb_examiner_mode(cb: CallbackQuery):
     user_data = await get_or_create_user(cb.from_user.id)
     lang = get_lang(user_data)
 
+    if not cb.message:
+        return
     await cb.message.edit_text(
         f"{t('exam_header', lang)}\n\n{t('exam_intro', lang)}",
         reply_markup=exam_cases_kb(lang),

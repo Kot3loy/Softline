@@ -100,7 +100,7 @@ def get_weak_areas(user_id: int, scenario: str) -> list:
     return weak_areas
 
 
-def get_user_stats(user_id: int, scenario: str = None) -> dict:
+def get_user_stats(user_id: int, scenario: str | None = None) -> dict:
     """Получить статистику пользователя"""
     data = _load_errors()
     user_data = data.get(str(user_id), {})

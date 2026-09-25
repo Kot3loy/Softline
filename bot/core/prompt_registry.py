@@ -74,7 +74,7 @@ class PromptRegistry:
         """Получить текущую версию промпта"""
         return self.registry.get("prompts", {}).get(name, {}).get("current")
 
-    def get_content(self, name: str, version: str = None) -> Optional[str]:
+    def get_content(self, name: str, version: str | None = None) -> Optional[str]:
         """Получить содержимое промпта по версии"""
         if name not in self.registry.get("prompts", {}):
             return None

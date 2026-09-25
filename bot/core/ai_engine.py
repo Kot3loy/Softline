@@ -47,13 +47,13 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
-_client = None
+_client: "GigaChatAsyncClient | None" = None
 _client_lock = asyncio.Lock()
 
-_last_responses = {}
+_last_responses: dict[int, list] = {}
 MAX_HISTORY = 3
 
-_last_responses_ttl = {}
+_last_responses_ttl: dict[int, float] = {}
 RESPONSES_TTL = 3600
 
 _cleanup_counter = 0
@@ -254,7 +254,7 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 700, st
     return "Извини, AI сейчас перегружен. Попробуй через минуту."
 
 
-async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list = None, case_type: str = "open") -> dict:
+async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list | None = None, case_type: str = "open") -> dict:
     """Сгенерировать задание для экзаменатора с retry"""
     global _cleanup_counter
     _cleanup_counter += 1

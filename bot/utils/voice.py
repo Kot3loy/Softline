@@ -92,7 +92,7 @@ def prepare_text_for_voice(text: str) -> str:
     return t
 
 
-async def text_to_speech(text: str, lang: str = "ru", voice: str = None) -> str:
+async def text_to_speech(text: str, lang: str = "ru", voice: str | None = None) -> str | None:
     """Преобразовать текст в голосовое сообщение через edge-tts (нейронные голоса)"""
     clean_text = prepare_text_for_voice(text)
     voice = voice or VOICE_MALE
