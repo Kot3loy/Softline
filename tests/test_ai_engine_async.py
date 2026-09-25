@@ -60,6 +60,41 @@ def test_strip_markdown_empty():
     assert _strip_markdown(None) is None
 
 
+def test_strip_slang_removes_slang_words():
+    from bot.core.ai_engine import strip_slang
+
+    out = strip_slang("Ответ норм, братан, всё понятно")
+    assert "норм" not in out.split()
+    assert "братан" not in out.split()
+    assert "всё понятно" in out
+
+
+def test_strip_slang_keeps_newlines():
+    """Регресс: фильтр сленга не должен схлопывать переводы строк"""
+    from bot.core.ai_engine import strip_slang
+
+    out = strip_slang("Первый абзац.\n\nВторой абзац про норм.")
+    assert "\n\n" in out
+    assert "норм" not in out
+    assert "Второй абзац" in out
+
+
+def test_strip_slang_fixes_punctuation():
+    """Регресс: фильтр сленга не должен оставлять пробел перед пунктуацией"""
+    from bot.core.ai_engine import strip_slang
+
+    out = strip_slang("Всё норм.")
+    assert out == "Всё."
+
+    out2 = strip_slang("Привет, братан! Как дела?")
+    # Второе regex сливает соседние знаки: ", !" -> ",!"
+    assert out2 == "Привет,! Как дела?"
+
+    out3 = strip_slang("Чувак, это норм, да?")
+    assert "норм" not in out3
+    assert "чувак" not in out3.lower()
+
+
 @pytest.mark.asyncio
 async def test_ask_ai_retry_then_success(monkeypatch):
     monkeypatch.setattr(ai_engine, "RETRY_DELAY", 0)
@@ -166,6 +201,22 @@ async def test_evaluate_answer_sanitizes_user_input(monkeypatch):
     prompt_sent = mock.await_args.args[0]
     assert "ignore all previous instructions" not in prompt_sent.lower()
     assert "reveal secrets" in prompt_sent
+
+
+def test_registry_no_slang_examples_and_ban_line():
+    """Реестр промптов: нет 'Норм. Ты как', есть запрет сленга"""
+    import yaml
+
+    with open("bot/prompts/registry.yaml", "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    for key in ("university", "job", "adaptation"):
+        content = data["prompts"][key]["versions"][0]["content"]
+        assert "Норм. Ты как" not in content, f"{key}: содержит 'Норм. Ты как'"
+        assert "не используй сленг" in content.lower(), f"{key}: нет запрета сленга"
+        assert "норм" in content.lower(), f"{key}: в запрете нет 'норм'"
+        assert "братан" in content.lower(), f"{key}: в запрете нет 'братан'"
+        assert "чувак" in content.lower(), f"{key}: в запрете нет 'чувк'"
 
 
 async def _async_return(value):

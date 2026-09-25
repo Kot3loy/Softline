@@ -1,3 +1,9 @@
+---
+scenario: companies
+source_url: https://hh.ru/employer/ozon
+tags: []
+---
+
 # Ozon
 
 ## Общая информация

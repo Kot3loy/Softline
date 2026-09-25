@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/hse/
+tags: []
+---
+
 # Высшая школа экономики (ВШЭ)
 
 ## Общая информация

@@ -10,7 +10,13 @@ from bot.core.prompt_registry import prompt_registry
 
 logger = logging.getLogger(__name__)
 
-# Backward compatibility aliases
+_SCENARIO_TOPICS = {
+    "university": "выбор вуза, поступление, ЕГЭ, студенческая жизнь",
+    "job": "поиск работы, резюме, собеседования, стажировки, карьера",
+    "adaptation": "адаптация на новой работе, коллеги, рабочий этикет",
+}
+
+# Алиасы обратной совместимости
 SYSTEM_PROMPTS = {}
 STYLE_RULES = ""
 
@@ -51,21 +57,25 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
     system_prompts = await _get_system_prompts()
     system = system_prompts.get(scenario, await _get_prompt("university"))
 
+    frame = f"Тема: {_SCENARIO_TOPICS.get(scenario, _SCENARIO_TOPICS['university'])}.\nДержись темы; на чужой вопрос вежливо верни к своей. Приветствия — коротко и верни к теме.\n\n"
+
     if context:
         prompt = (
-            "User question: {question}\n\n"
+            "{frame}User question: {question}\n\n"
             "{context}\n\n"
             "{rag_use}"
         ).format(
+            frame=frame,
             question=question,
             context=context,
             rag_use=t("rag_use_context", lang)
         )
     else:
         prompt = (
-            "User question: {question}\n\n"
+            "{frame}User question: {question}\n\n"
             "{rag_no}"
         ).format(
+            frame=frame,
             question=question,
             rag_no=t("rag_no_context", lang)
         )
@@ -90,9 +100,17 @@ async def get_welcome_message(scenario: str, lang: str = "ru") -> str:
             "job": t("welcome_job", lang),
             "adaptation": t("welcome_adaptation", lang),
         }
-        return messages.get(scenario, messages["university"])
+        welcome_text = messages.get(scenario, messages["university"])
 
-    return welcome_text
+    examples_key = f"welcome_{scenario}_examples"
+    examples = await _get_prompt(examples_key)
+
+    hint = t("info_ask_hint", lang)
+    result = f"{welcome_text}\n\n{hint}"
+    if examples:
+        result += f"\n\n{examples}"
+
+    return result
 
 
 # Инициализация обратной совместимости (синхронная загрузка из YAML)

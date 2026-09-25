@@ -146,7 +146,7 @@ async def _migrate(db, from_version):
             pass
 
 
-# ─── CRUD ───
+# ─── Основные операции (CRUD) ---
 
 
 async def get_or_create_user(user_id, username=None, first_name=None, last_name=None):

@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/itmo_kazan/
+tags: []
+---
+
 ﻿# Казанский (Приволжский) федеральный университет — ИТ-направления
 
 ## Общая информация

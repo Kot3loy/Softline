@@ -8,9 +8,25 @@ import asyncio
 from gigachat import GigaChatAsyncClient
 from gigachat.models import ChatCompletionRequest, ChatMessage, ChatModelOptions
 from bot.config import config
+from bot.core.rag import search
 
 logger = logging.getLogger(__name__)
 
+
+SLANG_WORDS = {"норм", "братан", "чувак", "дружище"}
+
+def strip_slang(text: str) -> str:
+    """Убрать сленговые слова из текста ответа ИИ"""
+    if not text:
+        return text
+    result = text
+    for word in SLANG_WORDS:
+        pattern = r'\b' + re.escape(word) + r'\b'
+        result = re.sub(pattern, " ", result, flags=re.IGNORECASE)
+    result = re.sub(r'[ \t]+([.,!?;:])', r'\1', result)
+    result = re.sub(r'([.,!?;:])\s+([.,!?;:])', r'\1\2', result)
+    result = re.sub(r'[ \t]+', ' ', result)
+    return result.strip()
 
 def _strip_markdown(text: str) -> str:
     """Убрать markdown-разметку из текста AI"""
@@ -18,14 +34,14 @@ def _strip_markdown(text: str) -> str:
         return text
     # Заголовки ## / ### / ####
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    # Жирный **text** и __text__
+    # Жирный текст жирным шрифтом (**text**)
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
-    # Курсив *text* и _text_ (осторожно, не трогать односимвольные)
+    # Курсивный текст курсивом (*text_), внимательно: не трогаем односимвольные
     text = re.sub(r'\*{2,}(.+?)\*{2,}', r'\1', text)
     # Горизонтальные линии ---
     text = re.sub(r'^---+$', '', text, flags=re.MULTILINE)
-    # Списки - item или * item
+    # Списки — пункты или *пункт
     text = re.sub(r'^[\s]*[-*]\s+', '• ', text, flags=re.MULTILINE)
     # Убрать пустые строки подряд (макс 2)
     text = re.sub(r'\n{3,}', '\n\n', text)
@@ -134,14 +150,14 @@ def _parse_json(text: str, default: dict) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Пытаемся найти JSON — сначала простой (без вложенности), потом весь до конца
+        # Ищем JSON: сначала простой вариант (без вложенности), затем весь текст до закрывающей скобки
         match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
         if match:
             try:
                 return json.loads(match.group())
             except json.JSONDecodeError:
                 pass
-        # Попытка 2: вложенный JSON — берём от первой { до последней }
+        # Попытка 2: вложенный JSON — берём от первой открывающей скобки до последней закрывающей
         first = text.find('{')
         last = text.rfind('}')
         if first != -1 and last > first:
@@ -218,7 +234,9 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 700, st
             raw = response.messages[0].content[0].text
             if raw and raw.strip():
                 logger.debug(f"GigaChat response: {raw[:500]}")
-                return _strip_markdown(raw) if strip_md else raw
+                text = _strip_markdown(raw) if strip_md else raw
+                text = strip_slang(text)
+                return text
             # Пустой ответ — повторяем
             logger.warning(f"GigaChat вернул пустой ответ (попытка {attempt + 1}/{MAX_RETRIES})")
             last_error = "пустой ответ"
@@ -314,7 +332,7 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             '}'
         )
 
-    # Retry: до 3 попыток с упрощающим промптом
+    # Retry: до 3 попыток с упрощенным промптом (уменьшаем сложность запроса)
     fallback_prompt = (
         f"Сгенерируй задание для сценария '{scenario}'. "
         'Верни ТОЛЬКО JSON без markdown: {{"type": "{case_type}", "situation": "...", "question": "..."}}'
@@ -324,7 +342,7 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
     for attempt in range(MAX_RETRIES):
         result = await ask_ai(prompts[attempt], system)
 
-        # Если ask_ai вернул ошибку — повторяем
+        # Если AI вернул ошибку — повторяем запрос
         if any(result.startswith(m) for m in _ERROR_MARKERS):
             logger.warning(f"generate_case: ошибка от AI (попытка {attempt + 1}): {result[:100]}")
             if attempt < MAX_RETRIES - 1:
@@ -344,7 +362,7 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
                     parsed["type"] = "open"
                 elif "correct" not in parsed:
                     parsed["correct"] = 0
-            return parsed
+            return {**parsed, "scenario": scenario}
 
         logger.warning(f"generate_case: невалидный JSON (попытка {attempt + 1})")
         if attempt < MAX_RETRIES - 1:
@@ -356,11 +374,12 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
         "type": case_type,
         "situation": "Не удалось сгенерировать задание",
         "question": "Попробуй позже — AI сейчас перегружен",
+        "scenario": scenario,
     }
 
 
 async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
-    """Оценить ответ пользователя на задание с retry"""
+    """Оценить ответ пользователя на задание с retry + RAG контекст из базы знаний"""
     global _cleanup_counter
     _cleanup_counter += 1
     if _cleanup_counter % _CLEANUP_INTERVAL == 0:
@@ -368,6 +387,32 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
 
     # Санитизация ввода
     user_answer = _sanitize_input(user_answer)
+
+    # RAG контекст: ищем релевантные материалы по сценарию кейса
+    scenario = case_data.get("scenario", "university")
+    # Маппинг сценария → source_type для RAG
+    _SCENARIO_SOURCE = {
+        "university": "universities",
+        "job": "companies",
+        "adaptation": "cases",
+    }
+    source_type = _SCENARIO_SOURCE.get(scenario)
+    query = f"{case_data.get('situation', '')} {case_data.get('question', '')} {user_answer}"
+    rag_docs = await asyncio.to_thread(search, query, 3, source_type)
+
+    context = ""
+    if rag_docs:
+        from bot.translations import t
+        # lang will be ru for internal processing; translation happens in handlers
+        context = "Найденная релевантная информация:\n\n"
+        for i, doc in enumerate(rag_docs, 1):
+            src = doc.metadata.get("source", "Неизвестно")
+            src_url = doc.metadata.get("source_url")
+            content = doc.page_content[:800]
+            if src_url:
+                context += f"{i}. Источник: {src}\nURL: {src_url}\n{content}\n\n"
+            else:
+                context += f"{i}. Источник: {src}\n{content}\n\n"
 
     system = (
         "Ты — практикующий наставник, оцениваешь ответ на задание. "
@@ -379,7 +424,7 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
         "7-8: Хорошо, есть конкретные шаги\n"
         "9-10: Отлично, лучше ожиданий\n"
         "Правило: если человек ПЫТАЕТСЯ ответить по теме — минимум 3 балла.\n\n"
-        "При оценивании СРАВНИВАЙ ответ с реальными примерами из базы знаний. "
+        "При оценивании ОБЯЗАТЕЛЬНО СРАВНИВАЙ ответ с найденной информацией из базы знаний. "
         "Если ответ похож на типичную ошибку — мягко подскажи как лучше. "
         "Если ответ хороший — приведи пример из практики.\n\n"
         "СТИЛЬ (Stop Slop — анти-AI правила):\n"
@@ -390,15 +435,18 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
         "- НЕ повторяй вопрос перед ответом.\n"
         "- Конкретика: 'Добавь цифры в резюме' вместо 'Подойдите к этому серьёзно'.\n"
         "- strengths и weaknesses — максимум 2 пункта, коротко.\n"
-        "- example_answer — 2-3 предложения. source — название.\n"
+        "- example_answer — 2-3 предложения. source — название источника.\n"
         "- Пиши ОДНИМ абзацем, без списков. Как будто пишешь другу.\n"
         "- Отвечай СПЛОШНЫМ текстом без форматирования. НЕ используй markdown: заголовки (##, ####), разделители (---), жирный (**), списки. Просто текст."
     )
+    rag_use = "Используй найденную информацию для оценки. Если её недостаточно — опирайся на опыт." if rag_docs else "Релевантной информации в базе нет. Оцени на основе своих знаний или скажи, что не знаешь."
     prompt = (
         f"Задание: {case_data.get('situation', '')}\n"
         f"Вопрос: {case_data.get('question', '')}\n\n"
         f"Ответ человека:\n{user_answer}\n\n"
         f"Очки хорошего ответа: {case_data.get('good_answer_points', [])}\n\n"
+        f"{context}"
+        f"{rag_use}\n\n"
         "Оцени (0-10) и дай обратную связь: feedback одним абзацем (3-4 предложения). "
         "strengths/weaknesses максимум 2 пункта. example 2-3 предложения.\n\n"
         "JSON:\n"
@@ -439,7 +487,7 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
             "source": "",
         })
 
-        # Гарантируем что score — число в диапазоне [0, 10]
+        # Гарантируем, что счет — целое число от 0 до 10
         if isinstance(parsed.get("score"), (int, float)):
             parsed["score"] = max(0, min(10, int(parsed["score"])))
             # Успешно получили валидный ответ

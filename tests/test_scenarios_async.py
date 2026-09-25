@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from bot.core import ai_engine
-from bot.core.scenarios import answer_info_question
+from bot.core.scenarios import answer_info_question, get_welcome_message
 from bot.translations import t
 
 
@@ -74,3 +74,37 @@ async def test_answer_info_question_saves_history_only_with_user_id():
         await answer_info_question("q", "university")
 
     assert 777 not in ai_engine._last_responses
+
+
+@pytest.mark.asyncio
+async def test_answer_info_question_includes_frame():
+    with patch("bot.core.scenarios.search", return_value=[]), \
+            patch("bot.core.scenarios.ask_ai", new_callable=AsyncMock) as ai_mock:
+        ai_mock.return_value = "ok"
+        await answer_info_question("тест вопрос", "job")
+
+    prompt = ai_mock.await_args.args[0]
+    assert "Тема: поиск работы, резюме, собеседования, стажировки, карьера" in prompt
+    assert "Держись темы" in prompt
+    assert "Приветствия — коротко" in prompt
+
+
+@pytest.mark.asyncio
+async def test_welcome_includes_hint_and_examples():
+    with patch("bot.core.scenarios._get_prompt") as mock_get_prompt:
+        mock_get_prompt.side_effect = lambda key: {
+            "welcome_university": "🎓 <b>Выбор вуза</b>\n\nПомогу выбрать вуз.",
+            "welcome_university_examples": "<b>Примеры вопросов:</b>\n• Какие проходные баллы на МГУ?",
+        }.get(key, "")
+
+        welcome = await get_welcome_message("university")
+
+    assert "Напиши свой вопрос" in welcome
+    assert "Примеры вопросов" in welcome
+    assert "проходные баллы" in welcome
+
+
+@pytest.mark.asyncio
+async def test_info_ask_hint_translation():
+    assert t("info_ask_hint", "ru") == "✍️ Напиши свой вопрос — отвечу по теме."
+    assert t("info_ask_hint", "en") == "✍️ Ask your question — I'll answer on topic."

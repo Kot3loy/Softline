@@ -71,6 +71,9 @@ async def _finalize_exam(user_id: int, session: dict, message, lang: str):
         for r in recommendations:
             result_text += f"  • {r}\n"
 
+    # Дисклеймер — рекомендации носят информационный характер
+    result_text += f"\n\n{t('disclaimer', lang)}"
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=t("exam_export", lang), callback_data="export_pdf")],
         [InlineKeyboardButton(text=t("btn_back", lang), callback_data="back_to_menu")],
@@ -406,6 +409,9 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
     source = evaluation.get("source", "")
     if source:
         text += f"\n{t('exam_source', lang, text=source)}\n"
+
+    # Дисклеймер — рекомендации носят информационный характер
+    text += f"\n\n{t('disclaimer', lang)}"
 
     answered = len(session["scores"])
     total = session["total"]

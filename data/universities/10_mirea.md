@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/mirea/
+tags: []
+---
+
 # РТУ МИРЭА (Российский технологический университет)
 
 ## Общая информация

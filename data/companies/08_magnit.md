@@ -1,3 +1,9 @@
+---
+scenario: companies
+source_url: https://hh.ru/employer/magnit
+tags: []
+---
+
 # Магнит
 
 ## Общая информация

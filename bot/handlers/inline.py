@@ -126,5 +126,5 @@ async def inline_query_handler(inline_query: InlineQuery):
 @router.callback_query(F.data.startswith("info_from_inline_"))
 async def cb_info_from_inline(cb):
     """Обработка нажатия на кнопку 'Открыть' из inline результатов"""
-    # TODO: реализовать переход в инфо-режим с контекстом
+    # TODO: реализовать переход в инфо-режим с контекстом (планируется)
     await cb.answer("🚧 В разработке", show_alert=True)

@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/rudn/
+tags: []
+---
+
 # РУДН (Российский университет дружбы народов)
 
 ## Общая информация

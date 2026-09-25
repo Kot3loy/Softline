@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/mipt/
+tags: []
+---
+
 ﻿# Московский физико-технический институт (МФТИ)
 
 ## Общая информация

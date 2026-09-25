@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 MAX_VOICE_LENGTH = 1500
 
-# Русские нейронные голоса Microsoft (м/ж)
+# Русские нейронные голоса Microsoft (мужской/женский)
 VOICE_MALE = "ru-RU-DmitryNeural"
 VOICE_FEMALE = "ru-RU-SvetlanaNeural"
 
@@ -97,12 +97,6 @@ async def text_to_speech(text: str, lang: str = "ru", voice: str = None) -> str:
     clean_text = prepare_text_for_voice(text)
     voice = voice or VOICE_MALE
 
-    # старый вариант с gTTS — медленный и голос ужасный, но работает как фоллбэк
-    # from gtts import gTTS
-    # tts = gTTS(text=clean_text, lang='ru')
-    # tts.save("temp.mp3")
-    # return "temp.mp3"
-
     try:
         import edge_tts
 
@@ -145,24 +139,43 @@ async def text_to_speech(text: str, lang: str = "ru", voice: str = None) -> str:
             return None
 
 
-async def speech_to_text(audio_file_path: str) -> str:
-    """Преобразовать голосовое сообщение в текст (SpeechRecognition)"""
+async def speech_to_text(audio_file_path: str) -> tuple:
+    """Распознать wav-файл в текст (Google STT, только русский язык).
+
+    Возвращает (text, error_kind):
+      ("привет", None)       — распознано
+      (None, "no_speech")    — речь не расслышана
+      (None, "service")      — нет ответа от сервиса распознавания
+    """
     try:
         import speech_recognition as sr
+    except ImportError:
+        logger.error("speech_recognition не установлен. Установи: pip install SpeechRecognition")
+        return None, "service"
 
+    try:
         recognizer = sr.Recognizer()
+        recognizer.dynamic_energy_threshold = True
+        recognizer.pause_threshold = 0.6  # чуть быстрее резать конец фразы
 
         with sr.AudioFile(audio_file_path) as source:
             audio = recognizer.record(source)
 
+        # Проект онлайн, распознавание всегда на русском
         text = recognizer.recognize_google(audio, language="ru-RU")
         logger.info(f"Распознан текст: {text[:100]}...")
-        return text
+        return text, None
 
-    except ImportError:
-        logger.error("speech_recognition не установлен. Установи: pip install SpeechRecognition")
-        return None
+    except sr.UnknownValueError:
+        # Сервис ответил, но речь не разобрал
+        logger.info("STT: речь не распознана")
+        return None, "no_speech"
+
+    except sr.RequestError as e:
+        # Нет связи с Google STT
+        logger.warning(f"STT: сервис недоступен: {e}")
+        return None, "service"
 
     except Exception as e:
         logger.warning(f"Ошибка распознавания: {e}")
-        return None
+        return None, "service"

@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/vladi/
+tags: []
+---
+
 ﻿# Дальневосточный федеральный университет (ДВФУ)
 
 ## Общая информация

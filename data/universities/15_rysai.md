@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/rysai/
+tags: []
+---
+
 # РГСУ (Российский государственный социальный университет)
 
 ## Общая информация

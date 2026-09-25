@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/mgtu_bauman/
+tags: []
+---
+
 # МГТУ им. Н.Э. Баумана
 
 ## Общая информация

@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/spbgu/
+tags: []
+---
+
 # Санкт-Петербургский государственный университет (СПбГУ)
 
 ## Общая информация

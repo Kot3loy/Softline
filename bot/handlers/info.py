@@ -94,13 +94,23 @@ async def handle_text_message(msg: Message, state: FSMContext):
         try:
             if voice_file:
                 await msg.answer_voice(FSInputFile(voice_file))
-                await msg.answer(
+                sent = await msg.answer(
                     f"{t('voice_text_prefix', lang, text=answer)}{disclaimer}",
                     parse_mode="HTML",
                 )
+                try:
+                    from bot.handlers.start import _remember
+                    _remember(msg.chat.id, getattr(sent, "message_id", None))
+                except Exception:
+                    pass
                 return
         finally:
             if voice_file and os.path.exists(voice_file):
                 os.remove(voice_file)
 
-    await msg.answer(f"{answer}{disclaimer}", parse_mode="HTML")
+    sent = await msg.answer(f"{answer}{disclaimer}", parse_mode="HTML")
+    try:
+        from bot.handlers.start import _remember
+        _remember(msg.chat.id, getattr(sent, "message_id", None))
+    except Exception:
+        pass

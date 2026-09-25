@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/urfu/
+tags: []
+---
+
 ﻿# Уральский федеральный университет (УрФУ)
 
 ## Общая информация

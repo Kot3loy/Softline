@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/kfu/
+tags: []
+---
+
 # Казанский федеральный университет (КФУ)
 
 ## Общая информация

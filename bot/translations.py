@@ -48,6 +48,10 @@ STRINGS = {
 
     # === SETTINGS ===
     "settings_header": {"ru": "⚙️ <b>Настройки</b>", "en": "⚙️ <b>Settings</b>"},
+    "settings_voice_hint": {
+        "ru": "🎙 Распознавание голоса — только на русском",
+        "en": "🎙 Voice recognition — Russian only",
+    },
     "voice_on": {"ru": "🔊 Голос: Вкл", "en": "🔊 Voice: On"},
     "voice_off": {"ru": "🔊 Голос: Выкл", "en": "🔊 Voice: Off"},
     "btn_reset_progress": {"ru": "🗑 Сбросить прогресс", "en": "🗑 Reset progress"},
@@ -95,6 +99,10 @@ STRINGS = {
 
     # === INFO MODE ===
     "info_header": {"ru": "📚 <b>Информационный режим</b>", "en": "📚 <b>Info mode</b>"},
+    "info_ask_hint": {
+        "ru": "✍️ Напиши свой вопрос — отвечу по теме.",
+        "en": "✍️ Ask your question — I'll answer on topic.",
+    },
     "disclaimer": {
         "ru": "\n\n⚠️ Рекомендации носят информационный характер и не заменяют "
               "официальные требования вузов и работодателей.",
@@ -178,6 +186,10 @@ STRINGS = {
     "voice_no_speech": {
         "ru": "🎤 Не удалось распознать речь.\nПопробуй говорить чётче или напиши текстом.",
         "en": "🎤 Failed to recognize speech.\nTry speaking clearer or write text.",
+    },
+    "voice_stt_error": {
+        "ru": "🎤 Сервис распознавания речи недоступен.\nПопробуй позже или напиши текстом.",
+        "en": "🎤 Speech recognition service is unavailable.\nTry again later or write text.",
     },
     "voice_text_prefix": {"ru": "📝 <b>Текст:</b>\n{text}", "en": "📝 <b>Text:</b>\n{text}"},
 

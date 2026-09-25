@@ -5,10 +5,10 @@ from bot.core.rag import _tokenize, _score, _split_text, search, rebuild_index
 def test_tokenize():
     """Тест токенизации текста"""
     tokens = _tokenize("Привет, мир! Это тест.")
-    assert "привет" in tokens
     assert "мир" in tokens
     assert "тест" in tokens
-    assert len(tokens) == 4
+    assert "привет" not in tokens
+    assert len(tokens) == 2
 
 
 def test_split_text():
@@ -69,6 +69,26 @@ async def test_rebuild_index():
     await rebuild_index()
     from bot.core.rag import _documents
     assert len(_documents) == 0
+
+
+def test_search_greeting_returns_nothing():
+    """Приветствие/пустые фразы не возвращают результаты"""
+    results = search("как дела")
+    assert results == []
+    results = search("привет")
+    assert results == []
+
+
+def test_search_real_question_works():
+    """Реальные вопросы возвращают непустой результат"""
+    results = search("какой проходной балл на МГУ")
+    assert isinstance(results, list)
+    assert len(results) > 0
+    assert all(hasattr(r, "page_content") for r in results)
+
+    results = search("как выбрать вуз")
+    assert isinstance(results, list)
+    assert len(results) > 0
 
 
 def test_search_source_type_filter():

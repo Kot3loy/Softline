@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/msu/
+tags: []
+---
+
 # Московский государственный университет имени М.В. Ломоносова (МГУ)
 
 ## Общая информация

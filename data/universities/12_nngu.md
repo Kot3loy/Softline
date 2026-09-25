@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/nngu/
+tags: []
+---
+
 # Нижегородский государственный университет (ННГУ)
 
 ## Общая информация

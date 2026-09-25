@@ -21,6 +21,8 @@ router = Router()
 # Запоминаем id последнего сообщения бота для edit вместо новых сообщений
 _last_msg: dict[int, int] = {}
 
+STALE_LIMIT = 6
+
 
 def _remember(chat_id: int, message_id: int):
     if isinstance(message_id, int) and message_id:
@@ -52,7 +54,8 @@ async def _show_screen(msg: Message, text: str, kb=None, parse_mode: str = "HTML
     """Показать экран: edit последнего сообщения бота, иначе новое"""
     chat_id = msg.chat.id
     mid = _last_msg.get(chat_id)
-    if mid:
+    msg_id = getattr(msg, "message_id", 0) or 0
+    if mid and msg_id - mid <= STALE_LIMIT:
         try:
             await msg.bot.edit_message_text(
                 text, chat_id=chat_id, message_id=mid,
@@ -89,6 +92,11 @@ async def cmd_help(msg: Message):
     await msg.answer(about, parse_mode="HTML")
 
 
+def _settings_text(lang: str) -> str:
+    """Текст экрана настроек — заголовок + подсказка про голос"""
+    return t("settings_header", lang) + "\n\n" + t("settings_voice_hint", lang)
+
+
 @router.message(F.text.in_({t("btn_settings", "ru"), t("btn_settings", "en")}))
 async def btn_settings(msg: Message):
     """Меню настроек"""
@@ -97,8 +105,8 @@ async def btn_settings(msg: Message):
     voice_enabled = user_data.get("voice_enabled", 0) == 1
     await _show_screen(
         msg,
-        t("settings_header", lang),
-        reply_markup=settings_kb(voice_enabled, lang),
+        _settings_text(lang),
+        kb=settings_kb(voice_enabled, lang),
     )
 
 
@@ -125,7 +133,7 @@ async def cb_set_language(cb: CallbackQuery):
 
     voice_enabled = user_data.get("voice_enabled", 0) == 1
     await cb.message.edit_text(
-        t("settings_header", new_lang),
+        _settings_text(new_lang),
         reply_markup=settings_kb(voice_enabled, new_lang),
         parse_mode="HTML",
     )
@@ -307,11 +315,23 @@ async def fallback_handler(msg: Message):
         try:
             if voice_file:
                 await msg.answer_voice(FSInputFile(voice_file))
-                await msg.answer(t("voice_text_prefix", lang, text=answer), parse_mode="HTML")
+                sent = await msg.answer(t("voice_text_prefix", lang, text=answer), parse_mode="HTML")
+                try:
+                    _remember(msg.chat.id, getattr(sent, "message_id", None))
+                except Exception:
+                    pass
             else:
-                await msg.answer(answer, parse_mode="HTML")
+                sent = await msg.answer(answer, parse_mode="HTML")
+                try:
+                    _remember(msg.chat.id, getattr(sent, "message_id", None))
+                except Exception:
+                    pass
         finally:
             if voice_file and os.path.exists(voice_file):
                 os.remove(voice_file)
     else:
-        await msg.answer(answer, parse_mode="HTML")
+        sent = await msg.answer(answer, parse_mode="HTML")
+        try:
+            _remember(msg.chat.id, getattr(sent, "message_id", None))
+        except Exception:
+            pass

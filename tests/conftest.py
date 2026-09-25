@@ -130,6 +130,7 @@ def mock_message():
     msg.bot.get_file = AsyncMock()
     msg.bot.download_file = AsyncMock()
     msg.text = "test message"
+    msg.message_id = 100
     msg.voice = MagicMock()
     msg.voice.file_id = "test_voice_id"
     return msg

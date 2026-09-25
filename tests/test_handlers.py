@@ -2,6 +2,60 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State
+from aiogram.types import Message, InlineKeyboardMarkup
+
+
+@pytest.mark.asyncio
+async def test_show_screen_edits_when_fresh(mock_message):
+    """_show_screen редактирует сообщение когда кэш свежий"""
+    from bot.handlers.start import _show_screen, _remember, _last_msg
+
+    chat_id = mock_message.chat.id
+    msg_id = mock_message.message_id
+    _remember(chat_id, msg_id)
+
+    mock_message.bot.edit_message_text = AsyncMock()
+
+    await _show_screen(mock_message, "Test text", parse_mode="HTML")
+
+    mock_message.bot.edit_message_text.assert_awaited_once()
+    mock_message.answer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_show_screen_sends_new_when_stale(mock_message):
+    """_show_screen шлёт новое сообщение когда кэш устарел"""
+    from bot.handlers.start import _show_screen, _remember, _last_msg, STALE_LIMIT
+
+    chat_id = mock_message.chat.id
+    msg_id = mock_message.message_id
+    _remember(chat_id, msg_id - STALE_LIMIT - 10)
+
+    mock_message.bot.edit_message_text = AsyncMock()
+    mock_message.answer = AsyncMock(return_value=MagicMock(message_id=msg_id + 1))
+
+    await _show_screen(mock_message, "Test text", parse_mode="HTML")
+
+    mock_message.bot.edit_message_text.assert_not_called()
+    mock_message.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_show_screen_edit_failure_falls_back(mock_message):
+    """_show_screen падает на msg.answer когда edit выбрасывает исключение"""
+    from bot.handlers.start import _show_screen, _remember, _last_msg
+
+    chat_id = mock_message.chat.id
+    msg_id = mock_message.message_id
+    _remember(chat_id, msg_id)
+
+    mock_message.bot.edit_message_text = AsyncMock(side_effect=Exception("Message not found"))
+    mock_message.answer = AsyncMock(return_value=MagicMock(message_id=msg_id + 1))
+
+    await _show_screen(mock_message, "Test text", parse_mode="HTML")
+
+    mock_message.bot.edit_message_text.assert_awaited_once()
+    mock_message.answer.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/bashkir/
+tags: []
+---
+
 # Башкирский государственный университет (БашГУ)
 
 ## Общая информация

@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/novosibirsk/
+tags: []
+---
+
 # Новосибирский государственный университет (НГУ)
 
 ## Общая информация

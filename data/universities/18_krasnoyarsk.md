@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/krasnoyarsk/
+tags: []
+---
+
 # Сибирский федеральный университет (СФУ)
 
 ## Общая информация

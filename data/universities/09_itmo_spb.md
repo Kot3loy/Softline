@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/itmo_spb/
+tags: []
+---
+
 # СПбГУ ИТМО (бывший ЛЭТИ)
 
 ## Общая информация

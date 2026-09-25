@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/samara/
+tags: []
+---
+
 # Самарский национальный исследовательский университет (Самарский университет)
 
 ## Общая информация

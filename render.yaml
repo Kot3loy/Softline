@@ -3,7 +3,12 @@ services:
     name: softline-bot
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      (test -x bin/ffmpeg ||
+      (mkdir -p bin &&
+      curl -fsSL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz |
+      tar -xJ --strip-components=1 -C bin))
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN

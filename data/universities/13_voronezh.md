@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/voronezh/
+tags: []
+---
+
 # Воронежский государственный университет (ВГУ)
 
 ## Общая информация

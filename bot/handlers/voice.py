@@ -11,7 +11,7 @@ from aiogram.fsm.context import FSMContext
 
 _log = logging.getLogger(__name__)
 
-# Optional voice dependencies
+# Опциональные зависимости для голоса
 try:
     from pydub import AudioSegment
     _VOICE_AVAILABLE = True
@@ -22,13 +22,14 @@ except ImportError:
 if not _VOICE_AVAILABLE:
     _log.warning("Voice features disabled: pydub not available (audioop missing in Python 3.14+)")
 
-# Skip ffmpeg setup if voice not available
+# Настройка ffmpeg, если голосовые функции активны
 if _VOICE_AVAILABLE:
     _ffmpeg_path = shutil.which("ffmpeg")
     _ffprobe_path = shutil.which("ffprobe")
 
     if not _ffmpeg_path:
-        for p in [r"C:\ffmpeg\bin", r"C:\Program Files\ffmpeg\bin", "/usr/bin", "/usr/local/bin"]:
+        for p in [r"C:\ffmpeg\bin", r"C:\Program Files\ffmpeg\bin", "/usr/bin", "/usr/local/bin",
+                  os.path.join(os.getcwd(), "bin")]:
             if os.path.exists(os.path.join(p, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")):
                 _ffmpeg_path = os.path.join(p, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
                 break
@@ -107,28 +108,21 @@ async def handle_voice(msg: Message, state: FSMContext):
             audio = AudioSegment.from_ogg(tmp_file)
             audio.export(wav_file, format="wav")
         except Exception as e:
+            # Без ffmpeg конвертация не удалась — дальше идти некуда
             _log.warning(f"Ошибка конвертации аудио: {e}")
-            try:
-                import speech_recognition as sr
-                recognizer = sr.Recognizer()
-                with sr.AudioFile(tmp_file) as source:
-                    audio = recognizer.record(source)
-                text = recognizer.recognize_google(audio, language="ru-RU")
-                wav_file = None
-            except Exception:
-                user_data = await get_or_create_user(user_id)
-                lang = get_lang(user_data)
-                await msg.answer(t("voice_error", lang))
-                return
+            user_data = await get_or_create_user(user_id)
+            lang = get_lang(user_data)
+            await msg.answer(t("voice_error", lang))
+            return
 
         await msg.bot.send_chat_action(msg.chat.id, "typing")
-        if wav_file:
-            text = await speech_to_text(wav_file)
+        text, stt_error = await speech_to_text(wav_file)
 
         if not text:
             user_data = await get_or_create_user(user_id)
             lang = get_lang(user_data)
-            await msg.answer(t("voice_no_speech", lang))
+            key = "voice_stt_error" if stt_error == "service" else "voice_no_speech"
+            await msg.answer(t(key, lang))
             return
 
         user_data = await get_or_create_user(user_id)
@@ -147,12 +141,22 @@ async def handle_voice(msg: Message, state: FSMContext):
         if voice_file:
             try:
                 await msg.answer_voice(FSInputFile(voice_file))
-                await msg.answer(t("voice_text_prefix", lang, text=answer), parse_mode="HTML")
+                sent = await msg.answer(t("voice_text_prefix", lang, text=answer), parse_mode="HTML")
+                try:
+                    from bot.handlers.start import _remember
+                    _remember(msg.chat.id, getattr(sent, "message_id", None))
+                except Exception:
+                    pass
             finally:
                 if os.path.exists(voice_file):
                     os.remove(voice_file)
         else:
-            await msg.answer(answer, parse_mode="HTML")
+            sent = await msg.answer(answer, parse_mode="HTML")
+            try:
+                from bot.handlers.start import _remember
+                _remember(msg.chat.id, getattr(sent, "message_id", None))
+            except Exception:
+                pass
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -186,12 +190,13 @@ async def _handle_voice_exam(msg: Message, state: FSMContext):
             await msg.answer(t("voice_error", lang))
             return
 
-        text = await speech_to_text(wav_file)
+        text, stt_error = await speech_to_text(wav_file)
 
         if not text:
             user_data = await get_or_create_user(msg.from_user.id)
             lang = get_lang(user_data)
-            await msg.answer(t("voice_no_speech", lang))
+            key = "voice_stt_error" if stt_error == "service" else "voice_no_speech"
+            await msg.answer(t(key, lang))
             return
 
         fake_msg = VoiceMessage(

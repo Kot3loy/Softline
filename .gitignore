@@ -18,6 +18,9 @@ build/
 *.db-journal
 /database/
 
+# ffmpeg server binary (скачивается при деплое на Render)
+/bin/
+
 # Logs
 *.log
 

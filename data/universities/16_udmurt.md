@@ -1,3 +1,9 @@
+---
+scenario: universities
+source_url: https://postupi.online/vuzi/udmurt/
+tags: []
+---
+
 # Удмуртский государственный университет (УдГУ)
 
 ## Общая информация
