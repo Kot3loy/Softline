@@ -1,6 +1,6 @@
 ---
 scenario: interviews
-source_url: https://hh.ru/article/university_admission
+source_url: https://career.hh.ru/article/kak-vybrat-vuz
 tags: []
 ---
 

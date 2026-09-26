@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/yandex
+source_url: https://yandex.ru/jobs
 tags: []
 ---
 

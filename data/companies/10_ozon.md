@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/ozon
+source_url: https://career.ozon.ru/
 tags: []
 ---
 

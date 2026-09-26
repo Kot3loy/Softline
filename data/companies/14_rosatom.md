@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/rosatom
+source_url: https://rosatom-career.ru/vacancies
 tags: []
 ---
 

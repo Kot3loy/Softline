@@ -1,6 +1,6 @@
 ---
 scenario: interviews
-source_url: https://hh.ru/article/job_interview
+source_url: https://hh.ru/article/32012
 tags: []
 ---
 

@@ -393,7 +393,7 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
     # Маппинг сценария → source_type для RAG
     _SCENARIO_SOURCE = {
         "university": "universities",
-        "job": "companies",
+        "job": ("companies", "interviews"),
         "adaptation": "cases",
     }
     source_type = _SCENARIO_SOURCE.get(scenario)
@@ -402,7 +402,6 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
 
     context = ""
     if rag_docs:
-        from bot.translations import t
         # lang will be ru for internal processing; translation happens in handlers
         context = "Найденная релевантная информация:\n\n"
         for i, doc in enumerate(rag_docs, 1):

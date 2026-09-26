@@ -1,6 +1,6 @@
 ---
 scenario: interviews
-source_url: https://hh.ru/article/company_adaptation
+source_url: https://hh.ru/article/32647
 tags: []
 ---
 

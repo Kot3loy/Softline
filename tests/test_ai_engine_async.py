@@ -203,6 +203,28 @@ async def test_evaluate_answer_sanitizes_user_input(monkeypatch):
     assert "reveal secrets" in prompt_sent
 
 
+@pytest.mark.asyncio
+async def test_evaluate_answer_job_searches_companies_and_interviews(monkeypatch):
+    """Сценарий job ищет RAG и по компаниям, и по собеседованиям"""
+    payload = json.dumps({"score": 5, "feedback": "ok"})
+    monkeypatch.setattr(ai_engine, "ask_ai", AsyncMock(return_value=payload))
+
+    recorded = {}
+
+    def fake_search(query, k=5, source_type=None):
+        recorded["source_type"] = source_type
+        return []
+
+    monkeypatch.setattr(ai_engine, "search", fake_search)
+
+    await evaluate_answer(
+        "ответ",
+        {"situation": "s", "question": "q", "scenario": "job"},
+    )
+
+    assert recorded["source_type"] == ("companies", "interviews")
+
+
 def test_registry_no_slang_examples_and_ban_line():
     """Реестр промптов: нет 'Норм. Ты как', есть запрет сленга"""
     import yaml

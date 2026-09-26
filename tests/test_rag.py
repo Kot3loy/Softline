@@ -102,3 +102,20 @@ def test_search_source_type_filter():
     scores = [_score(query_tokens, _tokenize(r.page_content)) for r in results]
     assert scores[0] > 0
     assert scores == sorted(scores, reverse=True)
+
+
+def test_search_source_type_list_filter():
+    """Фильтр source_type списком: только перечисленные типы, чужие не попадают"""
+    results = search("собеседование на работу", k=5, source_type=["companies", "interviews"])
+    assert isinstance(results, list)
+    assert len(results) > 0
+    allowed = {"companies", "interviews"}
+    assert all(r.metadata["source_type"] in allowed for r in results)
+    assert any(r.metadata["source_type"] == "interviews" for r in results)
+
+
+def test_search_source_type_list_excludes_others():
+    """Список типов не пускает документы из других источников"""
+    results = search("стажировка компания", k=5, source_type=["companies", "interviews"])
+    assert len(results) > 0
+    assert all(r.metadata["source_type"] not in {"universities", "cases"} for r in results)

@@ -78,6 +78,10 @@ def record_error(user_id: int, case_id: str, scenario: str, score: int):
     logger.info(f"Записана ошибка: user={user_id}, case={case_id}, score={score}")
 
 
+# Минимум попыток, прежде чем считать кейс слабой областью
+MIN_ATTEMPTS = 2
+
+
 def get_weak_areas(user_id: int, scenario: str) -> list:
     """Получить слабые области пользователя"""
     data = _load_errors()
@@ -86,7 +90,7 @@ def get_weak_areas(user_id: int, scenario: str) -> list:
 
     weak_areas = []
     for case_id, stats in scenario_data.items():
-        if stats["attempts"] > 0:
+        if stats["attempts"] >= MIN_ATTEMPTS:
             avg_score = stats["total_score"] / stats["attempts"]
             if avg_score < 7:  # Средний балл ниже 7 — слабая область
                 weak_areas.append({

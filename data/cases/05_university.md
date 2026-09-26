@@ -1,6 +1,5 @@
 ---
 scenario: cases
-source_url: https://github.com/softline/cases/blob/main/university.md
 tags: []
 ---
 

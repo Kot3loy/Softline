@@ -192,6 +192,13 @@ def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
             "• Академическая литература по карьерному консультированию"
         )
 
+    # Дисклеймер
+    disclaimer_label = "Disclaimer" if lang == "en" else "Дисклеймер"
+    pdf.chapter_title(disclaimer_label)
+    # Убираем эмодзи и переносы — не все шрифты содержат глиф ⚠️
+    disclaimer_text = t("disclaimer", lang).strip().lstrip("\u26a0\ufe0f").strip()
+    pdf.chapter_body(disclaimer_text)
+
     output_dir = config.DATA_DIR / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = int(time.time())

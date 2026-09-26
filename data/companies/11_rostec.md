@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/rostec
+source_url: https://rostec.ru/careers/vacancy/
 tags: []
 ---
 

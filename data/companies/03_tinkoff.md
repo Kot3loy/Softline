@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/tinkoff
+source_url: https://www.tbank.ru/career/
 tags: []
 ---
 

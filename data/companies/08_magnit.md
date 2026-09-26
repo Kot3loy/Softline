@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/magnit
+source_url: https://rabota.magnit.ru/
 tags: []
 ---
 

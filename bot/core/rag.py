@@ -150,8 +150,11 @@ def _score(query_tokens: list, doc_tokens: list) -> float:
     return score
 
 
-def search(query: str, k: int = 5, source_type: str | None = None) -> list:
-    """Поиск по базе знаний (keyword-based)"""
+def search(query: str, k: int = 5, source_type: str | list | tuple | set | None = None) -> list:
+    """Поиск по базе знаний (keyword-based)
+
+    source_type: строка или коллекция строк — фильтр по типу источника.
+    """
     docs = _load_documents()
     if not docs:
         return []
@@ -160,7 +163,11 @@ def search(query: str, k: int = 5, source_type: str | None = None) -> list:
 
     candidates = docs
     if source_type:
-        candidates = [d for d in docs if d.get("source_type") == source_type]
+        if isinstance(source_type, str):
+            allowed = {source_type}
+        else:
+            allowed = set(source_type)
+        candidates = [d for d in docs if d.get("source_type") in allowed]
 
     scored = []
     for doc in candidates:

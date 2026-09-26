@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/gazprom
+source_url: https://www.gazpromvacancy.ru/vacancies/
 tags: []
 ---
 

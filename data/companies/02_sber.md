@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/sber
+source_url: https://rabota.sber.ru
 tags: []
 ---
 

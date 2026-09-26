@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/lukoil
+source_url: https://lukoil.ru/Company/Career/Vacancies
 tags: []
 ---
 

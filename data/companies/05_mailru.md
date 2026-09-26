@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/mailru
+source_url: https://career.mail.ru
 tags: []
 ---
 

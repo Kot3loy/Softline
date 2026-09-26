@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/mts
+source_url: https://career.mts.ru
 tags: []
 ---
 

@@ -1,6 +1,6 @@
 ---
 scenario: companies
-source_url: https://hh.ru/employer/kaspersky
+source_url: https://www.kaspersky.ru/about/career
 tags: []
 ---
 
