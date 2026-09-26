@@ -3,7 +3,7 @@ import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-from bot.core.adaptive import record_error, get_weak_areas, get_user_stats, get_recommendations
+from bot.core.adaptive import record_error, get_weak_areas, get_user_stats, get_recommendations, get_clarifying_question
 
 
 @pytest.fixture
@@ -70,3 +70,40 @@ def test_get_recommendations(tmp_errors_file):
     record_error(test_uid, "rec_case", "university", 3)
     recs = get_recommendations(test_uid, "university")
     assert len(recs) > 0
+
+
+def test_get_clarifying_question(tmp_errors_file):
+    """Две неудачи по кейсу — уточняющий вопрос про слабую зону"""
+    test_uid = 888888895
+    record_error(test_uid, "clarify_case", "university", 3)
+    record_error(test_uid, "clarify_case", "university", 4)
+    q = get_clarifying_question(test_uid, "university")
+    assert q is not None
+    assert "выбор вуза" in q
+    assert "clarify_case" in q
+
+
+def test_get_clarifying_question_no_weak(tmp_errors_file):
+    """Нет слабых зон — вопрос не нужен"""
+    test_uid = 888888896
+    record_error(test_uid, "ok_case", "university", 9)
+    assert get_clarifying_question(test_uid, "university") is None
+
+
+def test_recommendations_scenario_name_in_english(tmp_errors_file):
+    """Название сценария в рекомендациях должно быть на языке юзера"""
+    test_uid = 888888897
+    record_error(test_uid, "en_case", "university", 2)
+    record_error(test_uid, "en_case", "university", 3)
+    recs = get_recommendations(test_uid, "university", "en")
+    assert "University" in recs[0]
+    assert "выбор вуза" not in recs[0]
+
+
+def test_clarifying_question_scenario_name_in_english(tmp_errors_file):
+    test_uid = 888888898
+    record_error(test_uid, "en_case_2", "job", 2)
+    record_error(test_uid, "en_case_2", "job", 3)
+    q = get_clarifying_question(test_uid, "job", "en")
+    assert "Job search" in q
+    assert "поиск работы" not in q

@@ -1,4 +1,4 @@
-"""Inline mode handler — @bot query поиск по базе знаний"""
+# inline-режим: @бот в чате ищут по базе знаний ( как google в чате )
 
 import html
 import logging
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _truncate(text: str, max_len: int = 50) -> str:
-    """Обрезать текст до max_len символов"""
+    # кусаю длинный текст с троеточием
     if len(text) <= max_len:
         return text
     return text[:max_len - 3] + "..."
@@ -31,7 +31,7 @@ def _truncate(text: str, max_len: int = 50) -> str:
 
 @router.inline_query()
 async def inline_query_handler(inline_query: InlineQuery):
-    """Обработка inline query — поиск по базе знаний"""
+    # юзер напечатал @бот что-то в чужом чате — ищем по базе
     query = inline_query.query.strip()
     user_id = inline_query.from_user.id
 
@@ -125,6 +125,5 @@ async def inline_query_handler(inline_query: InlineQuery):
 
 @router.callback_query(F.data.startswith("info_from_inline_"))
 async def cb_info_from_inline(cb):
-    """Обработка нажатия на кнопку 'Открыть' из inline результатов"""
-    # TODO: реализовать переход в инфо-режим с контекстом (планируется)
+    # пока просто говорю что в разработке
     await cb.answer("🚧 В разработке", show_alert=True)

@@ -1,10 +1,9 @@
-"""Общие языковые утилиты — определение языка пользователя и известные кнопки."""
+# утилиты по языкам: какой язык у юзера + список известных кнопок
 
 from bot.translations import t
 
 
 def get_lang(user_data: dict | None = None) -> str:
-    """Получить язык пользователя из данных"""
     return user_data.get("language", "ru") if user_data else "ru"
 
 

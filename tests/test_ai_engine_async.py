@@ -152,6 +152,44 @@ async def test_ask_ai_strip_md_flag(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_evaluate_answer_parses_score_from_plain_text(monkeypatch):
+    # модель ответила текстом, а не json — оценку достаём из текста
+    plain = "Оценка: 7/10. Хорошо, что назвала конкретный шаг, но не сказала, что делать дальше."
+    monkeypatch.setattr(ai_engine, "ask_ai", AsyncMock(return_value=plain))
+
+    result = await evaluate_answer("подробный ответ юзера", {"situation": "s", "question": "q"})
+
+    assert result["score"] == 7
+    assert result["feedback"] != "Не удалось оценить ответ"
+    assert "конкретный шаг" in result["feedback"]
+
+
+@pytest.mark.asyncio
+async def test_evaluate_answer_never_says_failed_to_evaluate(monkeypatch):
+    # даже на полном мусоре юзер не должен видеть «Не удалось оценить ответ»
+    monkeypatch.setattr(ai_engine, "ask_ai", AsyncMock(return_value="абракадабра без смысла"))
+
+    result = await evaluate_answer("подробный ответ юзера", {"situation": "s", "question": "q"})
+
+    assert result["feedback"] != "Не удалось оценить ответ"
+    assert isinstance(result["score"], int)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_answer_short_answer_gets_concrete_advice(monkeypatch):
+    # короткий общий ответ и разбор от ai не удался — объясняем по делу
+    monkeypatch.setattr(ai_engine, "ask_ai", AsyncMock(return_value="абракадабра"))
+
+    result = await evaluate_answer(
+        "я могла бы подробно подойти к изучению этого вопроса",
+        {"situation": "s", "question": "q"},
+    )
+
+    assert result["score"] < 5
+    assert "шаг" in result["feedback"].lower() or "конкрет" in result["feedback"].lower()
+
+
+@pytest.mark.asyncio
 async def test_evaluate_answer_clamps_score_above(monkeypatch):
     payload = json.dumps({"score": 150, "feedback": "нормально"})
     monkeypatch.setattr(ai_engine, "ask_ai", AsyncMock(return_value=payload))

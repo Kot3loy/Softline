@@ -14,21 +14,17 @@ logger = logging.getLogger(__name__)
 
 
 async def generate_report_outcomes(user_id: int, scenarios: dict) -> list[tuple[str, str | None]]:
-    """Сгенерировать PDF-отчёты по завершённым сценариям; None = ошибка"""
+    # генерирую по одному pdf на сценарий, где есть результат (None = ошибка)
     outcomes = []
     for scenario, data in scenarios.items():
         if data["sessions"] <= 0:
             continue
-        case_answers = await get_case_answers(user_id, scenario)
-        results = [
-            {"score": a["score"], "feedback": a.get("feedback", "")}
-            for a in case_answers
-        ] if case_answers else [
-            {"score": data["avg_score"], "feedback": "Средний балл по сценарию"}
-        ]
+        # берём только закрытые сессии и ответы с текстом —
+        # брошенные экзамены и пустые ответы в отчёт не идут
+        case_answers = await get_case_answers(user_id, scenario, only_completed=True)
         try:
             path = await asyncio.to_thread(
-                generate_report, user_id, scenario, results, case_answers
+                generate_report, user_id, scenario, [], case_answers
             )
             outcomes.append((scenario, path))
         except Exception as e:
@@ -39,7 +35,7 @@ async def generate_report_outcomes(user_id: int, scenarios: dict) -> list[tuple[
 
 @router.callback_query(F.data == "export_pdf")
 async def cb_export_pdf(cb: CallbackQuery):
-    """Экспорт результатов в PDF"""
+    # кнопка "экспорт в pdf" — шлю файл с итогами
     user_id = cb.from_user.id
     user_data = await get_or_create_user(user_id)
     lang = get_lang(user_data)

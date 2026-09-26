@@ -1,4 +1,4 @@
-"""Модуль работы с базой данных — singleton соединение, миграции, CRUD."""
+# работа с базой данных — singleton соединение, миграции, CRUD
 
 import logging
 import asyncio
@@ -14,7 +14,7 @@ _DB_VERSION = 3
 
 
 async def _get_db():
-    """Получить singleton соединение с reconnection"""
+    # получаем singleton соединение с reconnection
     global _db
     async with _db_lock:
         if _db is None:
@@ -42,7 +42,7 @@ async def _get_db():
 
 
 async def close_db():
-    """Закрыть соединение"""
+    # закрыть соединение
     global _db
     async with _db_lock:
         if _db:
@@ -52,7 +52,7 @@ async def close_db():
 
 
 async def init_db():
-    """Инициализация базы данных + миграции"""
+    # инициализация базы данных + миграции
     db = await _get_db()
 
     await db.execute("""
@@ -81,7 +81,7 @@ async def init_db():
 
 
 async def _create_tables(db):
-    """Создать все таблицы"""
+    # создать все таблицы
     await db.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -131,7 +131,7 @@ async def _create_tables(db):
 
 
 async def _migrate(db, from_version):
-    """Выполнить миграции до целевой версии"""
+    # выполнить миграции до целевой версии
     if from_version < 2:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_answers_user ON case_answers(user_id)")
@@ -146,11 +146,11 @@ async def _migrate(db, from_version):
             pass
 
 
-# ─── Основные операции (CRUD) ---
+# основные операции (CRUD)
 
 
 async def get_or_create_user(user_id, username=None, first_name=None, last_name=None):
-    """Получить или создать пользователя"""
+    # получить или создать пользователя
     db = await _get_db()
 
     cursor = await db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
@@ -176,7 +176,7 @@ async def get_or_create_user(user_id, username=None, first_name=None, last_name=
 
 
 async def update_user(uid, **kwargs):
-    """Обновить данные пользователя"""
+    # обновить данные пользователя
     allowed_fields = {"username", "first_name", "last_name", "voice_enabled", "current_scenario", "language"}
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
@@ -191,7 +191,7 @@ async def update_user(uid, **kwargs):
 
 
 async def reset_progress(uid):
-    """Сбросить прогресс пользователя"""
+    # сбросить прогресс пользователя
     db = await _get_db()
     await db.execute("DELETE FROM case_answers WHERE user_id = ?", (uid,))
     await db.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
@@ -204,7 +204,7 @@ async def reset_progress(uid):
 
 
 async def create_session(uid, scenario, mode, cases_total=0):
-    """Создать новую сессию"""
+    # создать новую сессию
     db = await _get_db()
     cursor = await db.execute(
         "INSERT INTO sessions (user_id, scenario, mode, cases_total) VALUES (?, ?, ?, ?)",
@@ -215,7 +215,7 @@ async def create_session(uid, scenario, mode, cases_total=0):
 
 
 async def end_session(sid, cases_completed, avg_score):
-    """Завершить сессию"""
+    # завершить сессию
     db = await _get_db()
     await db.execute(
         "UPDATE sessions SET cases_completed = ?, avg_score = ?, ended_at = CURRENT_TIMESTAMP WHERE session_id = ?",
@@ -225,7 +225,7 @@ async def end_session(sid, cases_completed, avg_score):
 
 
 async def save_case_answer(session_id, user_id, case_id, scenario, user_answer, score, feedback):
-    """Сохранить ответ на кейс"""
+    # сохранить ответ на кейс
     db = await _get_db()
     await db.execute(
         """INSERT INTO case_answers
@@ -237,7 +237,7 @@ async def save_case_answer(session_id, user_id, case_id, scenario, user_answer, 
 
 
 async def get_user_stats(uid):
-    """Получить статистику пользователя"""
+    # получить статистику пользователя
     db = await _get_db()
 
     cursor = await db.execute(
@@ -263,7 +263,7 @@ async def get_user_stats(uid):
 
 
 async def get_all_users(limit=9999):
-    """Получить список пользователей"""
+    # получить список пользователей
     db = await _get_db()
     if limit >= 9999:
         cursor = await db.execute("SELECT * FROM users ORDER BY created_at DESC")
@@ -276,31 +276,38 @@ async def get_all_users(limit=9999):
     return [dict(r) for r in rows]
 
 
-async def get_case_answers(uid, scenario=None):
-    """Получить ответы на кейсы пользователя"""
+async def get_case_answers(uid, scenario=None, only_completed: bool = False):
+    # ответы на кейсы. only_completed — брать только из закрытых сессий,
+    # иначе в отчёт попадут брошенные экзамены
     db = await _get_db()
+
+    conditions = ["ca.user_id = ?"]
+    params: list = [uid]
+
     if scenario:
-        cursor = await db.execute(
-            """SELECT ca.*, s.mode FROM case_answers ca
-            JOIN sessions s ON ca.session_id = s.session_id
-            WHERE ca.user_id = ? AND ca.scenario = ?
-            ORDER BY ca.created_at""",
-            (uid, scenario),
-        )
-    else:
-        cursor = await db.execute(
-            """SELECT ca.*, s.mode FROM case_answers ca
-            JOIN sessions s ON ca.session_id = s.session_id
-            WHERE ca.user_id = ?
-            ORDER BY ca.created_at""",
-            (uid,),
-        )
+        conditions.append("ca.scenario = ?")
+        params.append(scenario)
+    if only_completed:
+        conditions.append("s.cases_completed > 0")
+
+    # без текста ответа строка бессмысленна — в отчёт не идёт
+    conditions.append("TRIM(COALESCE(ca.user_answer, '')) != ''")
+
+    sql = (
+        "SELECT ca.*, s.mode, s.cases_total, s.cases_completed "
+        "FROM case_answers ca "
+        "JOIN sessions s ON ca.session_id = s.session_id "
+        f"WHERE {' AND '.join(conditions)} "
+        "ORDER BY ca.created_at"
+    )
+
+    cursor = await db.execute(sql, params)
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
 
 async def get_global_stats():
-    """Глобальная статистика"""
+    # глобальная статистика
     db = await _get_db()
 
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM users")

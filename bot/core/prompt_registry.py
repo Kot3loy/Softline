@@ -1,4 +1,5 @@
-"""Prompt Registry — версионирование и управление промптами"""
+# реестр промптов — храню версии промптов в registry.yaml
+# чтобы потом можно было посмотреть старые версии и откатить
 
 import logging
 import yaml
@@ -13,13 +14,11 @@ REGISTRY_PATH = Path(__file__).parent.parent / "prompts" / "registry.yaml"
 
 
 class PromptRegistry:
-    """Реестр промптов с версионированием"""
-
     def __init__(self):
         self.registry = self._load()
 
     def _load(self) -> dict:
-        """Загрузить реестр из YAML"""
+        # читаю реестр из yaml
         if REGISTRY_PATH.exists():
             try:
                 with open(REGISTRY_PATH, "r", encoding="utf-8") as f:
@@ -29,13 +28,13 @@ class PromptRegistry:
         return {"prompts": {}, "versions": []}
 
     def _save(self):
-        """Сохранить реестр в YAML"""
+        # сохраняю реестр обратно в yaml
         REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(REGISTRY_PATH, "w", encoding="utf-8") as f:
             yaml.dump(self.registry, f, allow_unicode=True, sort_keys=False)
 
     def register(self, name: str, content: str, author: str = "system", description: str = "") -> str:
-        """Зарегистрировать новую версию промпта"""
+        # добавляю новую версию промпта
         now = datetime.now().isoformat()
         version = f"v{len(self.registry.get('versions', [])) + 1}"
 
@@ -71,11 +70,11 @@ class PromptRegistry:
         return version
 
     def get_current(self, name: str) -> Optional[str]:
-        """Получить текущую версию промпта"""
+        # какая сейчас версия у промпта
         return self.registry.get("prompts", {}).get(name, {}).get("current")
 
     def get_content(self, name: str, version: str | None = None) -> Optional[str]:
-        """Получить содержимое промпта по версии"""
+        # достать текст промпта (текущий или конкретную версию)
         if name not in self.registry.get("prompts", {}):
             return None
 
@@ -98,11 +97,11 @@ class PromptRegistry:
         return None
 
     def list_versions(self, name: str) -> List[dict]:
-        """Список всех версий промпта"""
+        # все версии промпта
         return self.registry.get("prompts", {}).get(name, {}).get("versions", [])
 
     def rollback(self, name: str, version: str) -> bool:
-        """Откатить промпт к указанной версии"""
+        # откатить к старой версии промпта
         if name in self.registry.get("prompts", {}) and version in [v["version"] for v in self.registry["prompts"][name].get("versions", [])]:
             self.registry["prompts"][name]["current"] = version
             self._save()
@@ -110,7 +109,7 @@ class PromptRegistry:
         return False
 
     def get_active_prompts(self) -> dict:
-        """Получить все активные промпты"""
+        # все промпты которые сейчас в статусе current
         result = {}
         for name, info in self.registry.get("prompts", {}).items():
             current = info.get("current")
@@ -125,5 +124,5 @@ prompt_registry = PromptRegistry()
 
 
 def load_prompts_from_registry() -> dict:
-    """Загрузить активные промпты из реестра"""
+    # просто взять активные промпты из реестра
     return prompt_registry.get_active_prompts()

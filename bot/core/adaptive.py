@@ -1,4 +1,4 @@
-"""Адаптивное обучение — отслеживание ошибок и персонализация заданий."""
+# запоминаю ошибки пользователя и потом подкалывать задания по слабым темам
 
 import logging
 import json
@@ -14,7 +14,7 @@ ERRORS_FILE = config.DATA_DIR / "learning_errors.json"
 
 
 def _load_errors() -> dict:
-    """Загрузить данные об ошибках"""
+    # читаю learning_errors.json
     if ERRORS_FILE.exists():
         try:
             with open(ERRORS_FILE, "r", encoding="utf-8") as f:
@@ -25,18 +25,17 @@ def _load_errors() -> dict:
 
 
 def _save_errors(data: dict):
-    """Сохранить данные об ошибках (атомарная запись — write-to-temp-then-rename)"""
+    # сначала пишу во временный файл, потом переименовываю —
+    # если бот упадёт посреди записи, старый файл не сгорит
     try:
         ERRORS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        # Пишем во временный файл, потом делаем rename — не потеряем данные при краше
         fd, tmp_path = tempfile.mkstemp(dir=ERRORS_FILE.parent, suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            # Атомарная замена (на Windows os.replace тоже атомарен для одного volume)
             os.replace(tmp_path, str(ERRORS_FILE))
         except Exception:
-            # Если что-то пошло не так — удаляем временный файл
+            # если не получилось — просто убираем временный файл
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             raise
@@ -45,7 +44,7 @@ def _save_errors(data: dict):
 
 
 def record_error(user_id: int, case_id: str, scenario: str, score: int):
-    """Записать ошибку пользователя"""
+    # записываю попытку пользователя по кейсу
     data = _load_errors()
 
     if str(user_id) not in data:
@@ -55,7 +54,7 @@ def record_error(user_id: int, case_id: str, scenario: str, score: int):
     if scenario not in user_data:
         user_data[scenario] = {}
 
-    # Обновляем статистику по кейсу
+    # обновляю статистику по кейсу
     if case_id not in user_data[scenario]:
         user_data[scenario][case_id] = {
             "attempts": 0,
@@ -67,7 +66,7 @@ def record_error(user_id: int, case_id: str, scenario: str, score: int):
     case_stats["attempts"] += 1
     case_stats["total_score"] += score
 
-    # Если оценка низкая (< 6), добавляем в список ошибок
+    # если балл низкий (< 6) — добавляю в список ошибок
     if score < 6:
         case_stats["errors"].append({
             "score": score,
@@ -83,7 +82,7 @@ MIN_ATTEMPTS = 2
 
 
 def get_weak_areas(user_id: int, scenario: str) -> list:
-    """Получить слабые области пользователя"""
+    # какие темы у пользователя в просаде
     data = _load_errors()
     user_data = data.get(str(user_id), {})
     scenario_data = user_data.get(scenario, {})
@@ -99,13 +98,13 @@ def get_weak_areas(user_id: int, scenario: str) -> list:
                     "attempts": stats["attempts"],
                 })
 
-    # Сортируем по среднему баллу (худшие первыми)
+    # сортирую по баллу — худшие темы первыми
     weak_areas.sort(key=lambda x: x["avg_score"])
     return weak_areas
 
 
 def get_user_stats(user_id: int, scenario: str | None = None) -> dict:
-    """Получить статистику пользователя"""
+    # статистика по ошибкам
     data = _load_errors()
     user_data = data.get(str(user_id), {})
 
@@ -139,11 +138,37 @@ SCENARIO_NAMES = {
     "adaptation": "адаптация в компании",
 }
 
+# ключи кнопок сценариев — по ним получаем название на языке юзера
+SCENARIO_KEYS = {
+    "university": "btn_university",
+    "job": "btn_job",
+    "adaptation": "btn_adaptation",
+}
+
+
+def _scenario_name(scenario: str, lang: str) -> str:
+    # название сценария на языке юзера
+    key = SCENARIO_KEYS.get(scenario)
+    if key and lang != "ru":
+        return t(key, lang)
+    return SCENARIO_NAMES.get(scenario, scenario)
+
+
+def get_clarifying_question(user_id: int, scenario: str, lang: str = "ru") -> str | None:
+    # уточняющий вопрос по самой слабой теме — в следующих сессиях бот ковыряет её глубже
+    weak_areas = get_weak_areas(user_id, scenario)
+    if not weak_areas:
+        return None
+    area = weak_areas[0]
+    friendly = _scenario_name(scenario, lang)
+    return t("adaptive_clarify_question", lang,
+             friendly=friendly, case_id=area.get("case_id", ""), score=area["avg_score"])
+
 
 def get_recommendations(user_id: int, scenario: str, lang: str = "ru") -> list:
-    """Получить рекомендации для улучшения"""
+    # советы по слабым зонам
     weak_areas = get_weak_areas(user_id, scenario)
-    friendly = SCENARIO_NAMES.get(scenario, scenario)
+    friendly = _scenario_name(scenario, lang)
 
     recommendations = []
     for area in weak_areas[:3]:

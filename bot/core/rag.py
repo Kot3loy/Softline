@@ -1,6 +1,5 @@
-"""RAG-система — поиск релевантной информации по базе знаний.
-Реализация на основе TF-IDF и стемминга для русского языка.
-Качественная работа проверена на тестовых данных."""
+# поиск по базе знаний — грубая реализация tf-idf + стемминг
+# не идеальная, но для наших объёмов данных хватает
 
 import logging
 import re
@@ -10,18 +9,19 @@ from bot.config import config
 
 logger = logging.getLogger(__name__)
 
+# стоп-слова — такие слова ни о чём не говорят при поиске
 _STOP_WORDS = {
     "как", "что", "где", "когда", "это", "есть", "или", "для", "вот",
     "какой", "какая", "какие", "чтобы", "можно", "нужно", "дела", "привет",
 }
 
-_documents: list[dict] = []  # тут все документы хранятся после загрузки
-_doc_freq: dict[str, int] = {}  # word -> number of documents containing it
+_documents: list[dict] = []
+_doc_freq: dict[str, int] = {}
 _total_docs: int = 0
 
 
 def _load_documents() -> list:
-    """Загрузить все markdown-файлы из data/"""
+    # читаю все md-файлы из папки data и режу на куски по ~1000 символов
     global _documents, _doc_freq, _total_docs
 
     if _documents:
@@ -44,7 +44,7 @@ def _load_documents() -> list:
                 except UnicodeDecodeError:
                     content = md_file.read_text(encoding="cp1251")
                 
-                # Parse frontmatter if present
+                # в начале файла может быть source_url — ссылка на источник
                 source_url = None
                 if content.startswith('---'):
                     end = content.find('---', 3)
@@ -55,7 +55,7 @@ def _load_documents() -> list:
                             if fm and isinstance(fm, dict):
                                 source_url = fm.get('source_url')
                         except Exception:
-                            pass  # ignore frontmatter parse errors
+                            pass
                 
                 chunks = _split_text(content, chunk_size=1000, overlap=200)
                 for chunk in chunks:
@@ -69,7 +69,7 @@ def _load_documents() -> list:
             except Exception as e:
                 logger.error(f"Ошибка загрузки {md_file}: {e}")
 
-    # Считаем document frequency (в скольких документах встречается слово)
+    # для каждого слова считаю в скольких кусках оно встречается — нужен для idf
     _total_docs = len(_documents)
     for doc in _documents:
         tokens = set(_tokenize(doc["content"]))
@@ -81,9 +81,8 @@ def _load_documents() -> list:
 
 
 def _split_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list:
-    """Разбить текст на чанки"""
     if overlap >= chunk_size:
-        overlap = chunk_size // 4  # safety: overlap не может быть >= chunk_size
+        overlap = chunk_size // 4
     chunks = []
     start = 0
     while start < len(text):
@@ -105,9 +104,8 @@ _RU_SUFFIXES = [
 
 
 def _stem(word: str) -> str:
-    """Упрощённый стемминг для русского"""
-    # FIXME: это очень примитивный стемминг, для красивого русского надо бы
-    #        использовать pymystem3 или natasha, но они тяжёлые
+    # очень кривой стемминг — просто отрубаю окончания
+    # нормальный (pymystem3 или natasha) тяжёлый, для нас это перебор
     if len(word) < 4:
         return word
     for suffix in _RU_SUFFIXES:
@@ -117,7 +115,7 @@ def _stem(word: str) -> str:
 
 
 def _tokenize(text: str) -> list:
-    """Токенизация + стемминг"""
+    # режу текст на слова, убираю мусор, потом стемминг
     text = text.lower()
     text = re.sub(r'[^\w\s]', ' ', text)
     text = re.sub(r'\s+', ' ', text)
@@ -126,7 +124,7 @@ def _tokenize(text: str) -> list:
 
 
 def _score(query_tokens: list, doc_tokens: list) -> float:
-    """TF-IDF scoring с правильным IDF"""
+    # tf-idf: частота слова в документе * насколько слово редкое во всей базе
     if not query_tokens or not doc_tokens:
         return 0.0
 
@@ -151,10 +149,7 @@ def _score(query_tokens: list, doc_tokens: list) -> float:
 
 
 def search(query: str, k: int = 5, source_type: str | list | tuple | set | None = None) -> list:
-    """Поиск по базе знаний (keyword-based)
-
-    source_type: строка или коллекция строк — фильтр по типу источника.
-    """
+    # сам поиск: source_type может быть строка или список — фильтр по типу источника
     docs = _load_documents()
     if not docs:
         return []
@@ -191,7 +186,7 @@ def search(query: str, k: int = 5, source_type: str | list | tuple | set | None 
 
 
 async def rebuild_index():
-    """Очистить кэш (для перезагрузки)"""
+    # сброс кэша чтобы перечитать файлы заново
     global _documents, _doc_freq, _total_docs
     _documents = []
     _doc_freq = {}

@@ -12,7 +12,7 @@
 | `requirements-dev.txt` | Dev-зависимости для тестов (pytest, pytest-asyncio) | Только для разработки/тестов |
 | `.env.example` | Шаблон переменных окружения — скопируйте в `.env` и заполните | **Да** |
 | `.env` | **Ваши реальные секреты** (НЕ коммитить в git!) | **Да** |
-| `render.yaml` | Конфиг деплоя на Render (worker, disk, env vars) | Для деплоя |
+| `render.yaml` | Конфиг деплоя на Render (web-сервис, free-тайр) | Для деплоя |
 | `pyproject.toml` | Конфиг линтеров (ruff, mypy) и pytest | Для разработки |
 
 ---

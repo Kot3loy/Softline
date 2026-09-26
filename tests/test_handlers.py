@@ -6,55 +6,217 @@ from aiogram.types import Message, InlineKeyboardMarkup
 
 
 @pytest.mark.asyncio
-async def test_show_screen_edits_when_fresh(mock_message):
-    """_show_screen редактирует сообщение когда кэш свежий"""
-    from bot.handlers.start import _show_screen, _remember, _last_msg
+async def test_format_mistakes_translated_to_english():
+    """Типовые ошибки переводятся на язык юзера"""
+    from bot.handlers.examiner import _format_mistakes
 
-    chat_id = mock_message.chat.id
-    msg_id = mock_message.message_id
-    _remember(chat_id, msg_id)
+    mistakes = [
+        {"error": "Признаваться в незнании", "advice": "Скажи лучше так", "source": "hh.ru"},
+    ]
+    with patch("bot.handlers.examiner._translate_if_needed", new_callable=AsyncMock) as tr:
+        tr.side_effect = lambda text, lang: f"[EN]{text}"
+        block = await _format_mistakes(mistakes, "en")
 
-    mock_message.bot.edit_message_text = AsyncMock()
-
-    await _show_screen(mock_message, "Test text", parse_mode="HTML")
-
-    mock_message.bot.edit_message_text.assert_awaited_once()
-    mock_message.answer.assert_not_called()
+    assert "[EN]Признаваться в незнании" in block
+    assert "[EN]Скажи лучше так" in block
 
 
 @pytest.mark.asyncio
-async def test_show_screen_sends_new_when_stale(mock_message):
-    """_show_screen шлёт новое сообщение когда кэш устарел"""
-    from bot.handlers.start import _show_screen, _remember, _last_msg, STALE_LIMIT
+async def test_format_mistakes_empty():
+    from bot.handlers.examiner import _format_mistakes
+    assert await _format_mistakes([], "ru") == ""
 
-    chat_id = mock_message.chat.id
-    msg_id = mock_message.message_id
-    _remember(chat_id, msg_id - STALE_LIMIT - 10)
 
-    mock_message.bot.edit_message_text = AsyncMock()
-    mock_message.answer = AsyncMock(return_value=MagicMock(message_id=msg_id + 1))
+@pytest.mark.asyncio
+async def test_back_to_menu_breaks_session(test_db, mock_callback):
+    # выход в меню обрывает сессию: состояние и память диалога чистятся
+    from bot.core import ai_engine
+    from bot.handlers.start import cb_back_to_menu
+
+    uid = mock_callback.from_user.id
+    ai_engine.save_turn(uid, "вопрос", "ответ")
+    state = AsyncMock()
+
+    await cb_back_to_menu(mock_callback, state)
+
+    state.clear.assert_awaited_once()
+    assert ai_engine.has_history(uid) is False
+    ai_engine.clear_history(uid)
+
+
+@pytest.mark.asyncio
+async def test_back_to_menu_closes_unfinished_exam(test_db, mock_callback):
+    # вышел из экзамена не до конца — сессия закрывается с реальными цифрами
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+    from bot.handlers.start import cb_back_to_menu
+
+    uid = mock_callback.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 5)
+    examiner.exam_sessions[uid] = {
+        "scenario": "job",
+        "cases": [],
+        "current": 1,
+        "total": 5,
+        "session_id": session_id,
+        "answers": [],
+        "scores": [4, 8],
+        "timestamp": 9e9,
+    }
+
+    try:
+        await cb_back_to_menu(mock_callback, AsyncMock())
+
+        cursor = await test_db.execute(
+            "SELECT cases_completed, avg_score, ended_at FROM sessions WHERE session_id = ?",
+            (session_id,),
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row["cases_completed"] == 2
+        assert abs(row["avg_score"] - 6.0) < 0.01
+        assert row["ended_at"] is not None
+        assert uid not in examiner.exam_sessions
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_abandon_exam_without_session_is_noop():
+    from bot.handlers.examiner import abandon_exam
+    await abandon_exam(123456789)
+    assert 123456789 not in __import__("bot.handlers.examiner", fromlist=["x"]).exam_sessions
+
+
+@pytest.mark.asyncio
+async def test_answer_choice_deletes_case_message(test_db, mock_callback):
+    # после ответа на тестовое задание его текст удаляется из чата
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+
+    uid = mock_callback.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 3)
+
+    case = {
+        "type": "choice",
+        "situation": "s",
+        "question": "q",
+        "options": ["A", "B", "C", "D"],
+        "correct": 0,
+        "explanation": "e",
+    }
+    examiner.exam_sessions[uid] = {
+        "scenario": "job",
+        "cases": [case, case, case],
+        "current": 0,
+        "total": 3,
+        "session_id": session_id,
+        "answers": [],
+        "scores": [],
+        "timestamp": 9e9,
+        "chat_id": 555,
+        "case_msg_id": 777,
+        "feedback_msg_id": None,
+    }
+    mock_callback.data = "answer_choice_0"
+
+    try:
+        with patch.object(examiner, "record_error", lambda *a, **kw: None):
+            await examiner.cb_answer_choice(mock_callback, AsyncMock())
+
+        mock_callback.bot.delete_message.assert_awaited_once_with(555, 777)
+        assert examiner.exam_sessions[uid]["case_msg_id"] is None
+        # разбор с оценкой остаётся в чате
+        assert mock_callback.message.answer.await_count == 1
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_next_case_deletes_unanswered_task(test_db, mock_callback):
+    # перешли к следующему заданию без ответа — старое задание удаляется
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+
+    uid = mock_callback.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 3)
+
+    case = {
+        "type": "open",
+        "situation": "s",
+        "question": "q",
+        "good_answer_points": [],
+        "common_mistakes": [],
+    }
+    examiner.exam_sessions[uid] = {
+        "scenario": "job",
+        "cases": [case, case, case],
+        "current": 0,
+        "total": 3,
+        "session_id": session_id,
+        "answers": [],
+        "scores": [],
+        "timestamp": 9e9,
+        "chat_id": 555,
+        "case_msg_id": 888,
+        "feedback_msg_id": 999,
+    }
+    mock_callback.data = "next_case"
+
+    try:
+        await examiner.cb_next_case(mock_callback, AsyncMock())
+
+        mock_callback.bot.delete_message.assert_awaited_once_with(555, 888)
+        session = examiner.exam_sessions[uid]
+        assert session["current"] == 1
+        # новое задание получило свой id
+        assert session["case_msg_id"] is not None
+        # разбор прошлого задания не удаляли
+        assert session["feedback_msg_id"] == 999
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_show_screen_always_sends_new_message(mock_message):
+    """_show_screen всегда шлёт новое сообщение вниз, а не правит старое"""
+    from bot.handlers.start import _show_screen
+
+    mock_message.answer = AsyncMock(return_value=MagicMock(message_id=999))
 
     await _show_screen(mock_message, "Test text", parse_mode="HTML")
 
-    mock_message.bot.edit_message_text.assert_not_called()
     mock_message.answer.assert_awaited_once()
+    mock_message.bot.edit_message_text.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_show_screen_edit_failure_falls_back(mock_message):
-    """_show_screen падает на msg.answer когда edit выбрасывает исключение"""
-    from bot.handlers.start import _show_screen, _remember, _last_msg
+async def test_replace_card_sends_new_and_deletes_old(mock_message):
+    """_replace_card отправляет новую карточку и удаляет старую"""
+    from bot.handlers.start import _replace_card
 
-    chat_id = mock_message.chat.id
-    msg_id = mock_message.message_id
-    _remember(chat_id, msg_id)
+    mock_message.answer = AsyncMock(return_value=MagicMock(message_id=1000))
+    mock_message.delete = AsyncMock()
 
-    mock_message.bot.edit_message_text = AsyncMock(side_effect=Exception("Message not found"))
-    mock_message.answer = AsyncMock(return_value=MagicMock(message_id=msg_id + 1))
+    await _replace_card(mock_message, "Новая карточка")
 
-    await _show_screen(mock_message, "Test text", parse_mode="HTML")
+    mock_message.answer.assert_awaited_once()
+    mock_message.delete.assert_awaited_once()
 
-    mock_message.bot.edit_message_text.assert_awaited_once()
+
+@pytest.mark.asyncio
+async def test_replace_card_survives_delete_failure(mock_message):
+    """Если старую карточку удалить не вышло — новую всё равно показываем"""
+    from bot.handlers.start import _replace_card
+
+    mock_message.answer = AsyncMock(return_value=MagicMock(message_id=1001))
+    mock_message.delete = AsyncMock(side_effect=Exception("message to delete not found"))
+
+    await _replace_card(mock_message, "Новая карточка")
+
     mock_message.answer.assert_awaited_once()
 
 
@@ -90,7 +252,7 @@ async def test_btn_university(test_db, mock_message):
     from bot.handlers.start import btn_university
 
     mock_message.text = "🎓 Выбор вуза"
-    await btn_university(mock_message)
+    await btn_university(mock_message, AsyncMock())
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
@@ -103,7 +265,7 @@ async def test_btn_job(test_db, mock_message):
     from bot.handlers.start import btn_job
 
     mock_message.text = "💼 Поиск работы"
-    await btn_job(mock_message)
+    await btn_job(mock_message, AsyncMock())
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
@@ -116,7 +278,7 @@ async def test_btn_adaptation(test_db, mock_message):
     from bot.handlers.start import btn_adaptation
 
     mock_message.text = "🤝 Адаптация в компании"
-    await btn_adaptation(mock_message)
+    await btn_adaptation(mock_message, AsyncMock())
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
@@ -192,11 +354,14 @@ async def test_exam_start_requires_scenario(test_db, mock_callback):
 
         state.set_state.assert_awaited_once_with(ExamState.waiting_for_answer)
         mock_callback.answer.assert_awaited_once()
-        mock_callback.message.edit_text.assert_awaited_once()
-        assert "5" in mock_callback.message.edit_text.await_args.args[0]
+        # карточка больше не правится на месте, а уходит новым сообщением вниз
+        mock_callback.message.edit_text.assert_not_awaited()
 
-        answer_text = mock_callback.message.answer.await_args.args[0]
-        assert "Задание 1 из 5" in answer_text
+        calls = mock_callback.message.answer.await_args_list
+        assert len(calls) == 2
+        # первым уходит карточка «начинаем», вторым — само задание
+        assert "5" in calls[0].args[0]
+        assert "Задание 1 из 5" in calls[1].args[0]
 
         cursor = await test_db.execute(
             "SELECT mode, cases_total FROM sessions WHERE user_id = ?", (user_id,)

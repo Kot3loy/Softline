@@ -1,4 +1,4 @@
-"""Хендлеры старта — приветствие, главное меню, настройки, команды."""
+# хендлеры старта — приветствие, главное меню, настройки, команды
 
 import logging
 import asyncio
@@ -6,6 +6,7 @@ import os
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.filters import CommandStart, Command, StateFilter
+from aiogram.fsm.context import FSMContext
 
 from bot.translations import t
 from bot.utils.keyboards import main_menu_kb, scenario_info_kb, settings_kb, progress_kb
@@ -18,10 +19,8 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-# Запоминаем id последнего сообщения бота для edit вместо новых сообщений
+# запоминаем id последнего сообщения бота
 _last_msg: dict[int, int] = {}
-
-STALE_LIMIT = 6
 
 
 def _remember(chat_id: int, message_id: int):
@@ -29,8 +28,12 @@ def _remember(chat_id: int, message_id: int):
         _last_msg[chat_id] = message_id
 
 
+def _forget(chat_id: int):
+    _last_msg.pop(chat_id, None)
+
+
 def _about_text(lang: str, include_disclaimer: bool = False) -> str:
-    """Собрать текст раздела «О боте»"""
+    # собрать текст раздела «О боте»
     parts = [
         t("about_header", lang),
         t("about_desc", lang),
@@ -51,26 +54,26 @@ def _about_text(lang: str, include_disclaimer: bool = False) -> str:
 
 
 async def _show_screen(msg: Message, text: str, kb=None, parse_mode: str = "HTML"):
-    """Показать экран: edit последнего сообщения бота, иначе новое"""
-    chat_id = msg.chat.id
-    mid = _last_msg.get(chat_id)
-    msg_id = getattr(msg, "message_id", 0) or 0
-    if mid and msg_id - mid <= STALE_LIMIT:
-        try:
-            await msg.bot.edit_message_text(
-                text, chat_id=chat_id, message_id=mid,
-                reply_markup=kb, parse_mode=parse_mode,
-            )
-            return
-        except Exception:
-            pass  # сообщение удалено/не изменилось — шлём новое
+    # всегда новое сообщение внизу чата, старую карточку не трогаем
     sent = await msg.answer(text, reply_markup=kb, parse_mode=parse_mode)
-    _remember(chat_id, getattr(sent, "message_id", None))
+    _remember(msg.chat.id, getattr(sent, "message_id", None))
+    return sent
+
+
+async def _replace_card(msg: Message, text: str, kb=None, parse_mode: str = "HTML"):
+    # карточку с кнопками меняем: шлём новую вниз, старую удаляем,
+    # иначе меню остаётся высоко в чате
+    sent = await msg.answer(text, reply_markup=kb, parse_mode=parse_mode)
+    try:
+        await msg.delete()
+    except Exception as e:
+        logger.debug(f"Не удалось удалить старую карточку: {e}")
+    return sent
 
 
 @router.message(CommandStart())
 async def cmd_start(msg: Message):
-    """Приветствие"""
+    # приветствие
     user_data = await get_or_create_user(
         user_id=msg.from_user.id,
         username=msg.from_user.username,
@@ -78,6 +81,15 @@ async def cmd_start(msg: Message):
         last_name=msg.from_user.last_name,
     )
     lang = get_lang(user_data)
+
+    # /start — новая сессия, старую память диалога сбрасываем
+    from bot.core.ai_engine import clear_history
+    clear_history(msg.from_user.id)
+
+    # экзамен, если шёл, тоже закрываем
+    from bot.handlers.examiner import abandon_exam
+    await abandon_exam(msg.from_user.id)
+
     sent = await msg.answer(t("welcome_msg", lang), reply_markup=main_menu_kb(lang), parse_mode="HTML")
     _remember(msg.chat.id, getattr(sent, "message_id", None))
 
@@ -85,7 +97,7 @@ async def cmd_start(msg: Message):
 @router.message(Command("help"))
 @router.message(Command("disclaimer"))
 async def cmd_help(msg: Message):
-    """Справка и дисклеймер"""
+    # справка и дисклеймер
     user_data = await get_or_create_user(msg.from_user.id)
     lang = get_lang(user_data)
     about = _about_text(lang, include_disclaimer=True)
@@ -93,13 +105,13 @@ async def cmd_help(msg: Message):
 
 
 def _settings_text(lang: str) -> str:
-    """Текст экрана настроек — заголовок + подсказка про голос"""
+    # текст экрана настроек — заголовок + подсказка про голос
     return t("settings_header", lang) + "\n\n" + t("settings_voice_hint", lang)
 
 
 @router.message(F.text.in_({t("btn_settings", "ru"), t("btn_settings", "en")}))
 async def btn_settings(msg: Message):
-    """Меню настроек"""
+    # меню настроек
     user_data = await get_or_create_user(msg.from_user.id)
     lang = get_lang(user_data)
     voice_enabled = user_data.get("voice_enabled", 0) == 1
@@ -112,7 +124,7 @@ async def btn_settings(msg: Message):
 
 @router.callback_query(F.data == "settings_voice")
 async def cb_settings_voice(cb: CallbackQuery):
-    """Переключение голоса"""
+    # переключение голоса
     user_data = await get_or_create_user(cb.from_user.id)
     lang = get_lang(user_data)
     new_value = 0 if user_data.get("voice_enabled", 0) == 1 else 1
@@ -126,16 +138,16 @@ async def cb_settings_voice(cb: CallbackQuery):
 
 @router.callback_query(F.data.in_({"set_lang_ru", "set_lang_en"}))
 async def cb_set_language(cb: CallbackQuery):
-    """Переключение языка по конкретной кнопке"""
+    # переключение языка по конкретной кнопке
     user_data = await get_or_create_user(cb.from_user.id)
     new_lang = "ru" if cb.data == "set_lang_ru" else "en"
     await update_user(cb.from_user.id, language=new_lang)
 
     voice_enabled = user_data.get("voice_enabled", 0) == 1
-    await cb.message.edit_text(
+    await _replace_card(
+        cb.message,
         _settings_text(new_lang),
-        reply_markup=settings_kb(voice_enabled, new_lang),
-        parse_mode="HTML",
+        kb=settings_kb(voice_enabled, new_lang),
     )
     await cb.answer(f"Language → {new_lang.upper()}", show_alert=True)
 
@@ -145,7 +157,7 @@ _reset_confirm_users = set()
 
 @router.callback_query(F.data == "progress_reset")
 async def cb_progress_reset(cb: CallbackQuery):
-    """Сброс прогресса"""
+    # сброс прогресса
     user_id = cb.from_user.id
     user_data = await get_or_create_user(user_id)
     lang = get_lang(user_data)
@@ -169,16 +181,16 @@ async def cb_progress_reset(cb: CallbackQuery):
 
 @router.callback_query(F.data == "settings_about")
 async def cb_settings_about(cb: CallbackQuery):
-    """О боте"""
+    # о боте
     user_data = await get_or_create_user(cb.from_user.id)
     lang = get_lang(user_data)
-    await cb.message.edit_text(_about_text(lang), reply_markup=None, parse_mode="HTML")
+    await _replace_card(cb.message, _about_text(lang), kb=None)
     await cb.answer()
 
 
 @router.message(Command("export"))
 async def cmd_export(msg: Message):
-    """Команда /export — генерация PDF-отчёта"""
+    # команда /export — генерация PDF-отчёта
     from bot.handlers.pdf_export import generate_report_outcomes
 
     user_data = await get_or_create_user(msg.from_user.id)
@@ -211,58 +223,62 @@ async def cmd_export(msg: Message):
         await msg.answer(t("pdf_ready", lang))
 
 
-@router.message(F.text.in_({t("btn_university", "ru"), t("btn_university", "en")}))
-async def btn_university(msg: Message):
-    """Выбор вуза"""
+async def _new_scenario(msg: Message, state: FSMContext, scenario: str):
+    # выбрали другой сценарий — прежняя сессия инфо-режима обрывается
     user_data = await get_or_create_user(msg.from_user.id)
     lang = get_lang(user_data)
+
+    await state.clear()
+    from bot.core.ai_engine import clear_history
+    clear_history(msg.from_user.id)
+
     await _show_screen(
         msg,
-        t("scenario_university", lang),
-        kb=scenario_info_kb("university", lang),
+        t(f"scenario_{scenario}", lang),
+        kb=scenario_info_kb(scenario, lang),
     )
+
+
+@router.message(F.text.in_({t("btn_university", "ru"), t("btn_university", "en")}))
+async def btn_university(msg: Message, state: FSMContext):
+    # выбор вуза
+    await _new_scenario(msg, state, "university")
 
 
 @router.message(F.text.in_({t("btn_job", "ru"), t("btn_job", "en")}))
-async def btn_job(msg: Message):
-    """Поиск работы"""
-    user_data = await get_or_create_user(msg.from_user.id)
-    lang = get_lang(user_data)
-    await _show_screen(
-        msg,
-        t("scenario_job", lang),
-        kb=scenario_info_kb("job", lang),
-    )
+async def btn_job(msg: Message, state: FSMContext):
+    # поиск работы
+    await _new_scenario(msg, state, "job")
 
 
 @router.message(F.text.in_({t("btn_adaptation", "ru"), t("btn_adaptation", "en")}))
-async def btn_adaptation(msg: Message):
-    """Адаптация в компании"""
-    user_data = await get_or_create_user(msg.from_user.id)
-    lang = get_lang(user_data)
-    await _show_screen(
-        msg,
-        t("scenario_adaptation", lang),
-        kb=scenario_info_kb("adaptation", lang),
-    )
+async def btn_adaptation(msg: Message, state: FSMContext):
+    # адаптация в компании
+    await _new_scenario(msg, state, "adaptation")
 
 
 @router.callback_query(F.data == "back_to_menu")
-async def cb_back_to_menu(cb: CallbackQuery):
-    """Возврат в главное меню — одно edit, без дубля"""
+async def cb_back_to_menu(cb: CallbackQuery, state: FSMContext):
+    # выход в главное меню: сессия инфо-режима обрывается
     user_data = await get_or_create_user(cb.from_user.id)
     lang = get_lang(user_data)
     text = f"{t('welcome_msg', lang)}\n\n{t('choose_scenario', lang)}"
-    try:
-        await cb.message.edit_text(text, reply_markup=None, parse_mode="HTML")
-    except Exception:
-        await cb.message.answer(text, parse_mode="HTML")
+
+    await state.clear()
+    from bot.core.ai_engine import clear_history
+    clear_history(cb.from_user.id)
+
+    # если шёл экзамен — закрываем его с реальными цифрами
+    from bot.handlers.examiner import abandon_exam
+    await abandon_exam(cb.from_user.id)
+
+    await _replace_card(cb.message, text, kb=None)
     await cb.answer()
 
 
 @router.message(F.text.in_({t("btn_progress", "ru"), t("btn_progress", "en")}))
 async def btn_progress(msg: Message):
-    """Показать статистику"""
+    # показать статистику
     user_data = await get_or_create_user(msg.from_user.id)
     lang = get_lang(user_data)
     stats = await get_user_stats(msg.from_user.id)
@@ -294,7 +310,7 @@ async def btn_progress(msg: Message):
 
 @router.message(F.text, StateFilter(None), ~F.text.in_(KNOWN_BUTTONS))
 async def fallback_handler(msg: Message):
-    """Неизвестные текстовые сообщения — всегда через AI"""
+    # неизвестные текстовые сообщения — всегда через AI
     user_id = msg.from_user.id
     user_data = await get_or_create_user(user_id)
     lang = get_lang(user_data)

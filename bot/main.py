@@ -1,4 +1,4 @@
-"""Главный модуль бота — запуск polling + health endpoint."""
+# основной запуск бота: polling + маленький http-сервер для health checks
 
 import asyncio
 import logging
@@ -37,12 +37,11 @@ web_runner = None
 
 
 async def health_handler(request):
-    """Health endpoint"""
     return web.json_response({"status": "ok"})
 
 
 async def start_web_server():
-    """Запуск HTTP-сервера для health checks"""
+    # отдельный http-сервер — чтобы хостинг понимал что бот жив (посылает /health)
     global web_runner
     app = web.Application()
     app.router.add_get("/health", health_handler)
@@ -56,14 +55,13 @@ async def start_web_server():
 
 
 async def on_startup():
-    """Действия при запуске бота"""
     logger.info("Инициализация базы данных...")
     await init_db()
     logger.info("База данных готова")
 
 
 async def on_shutdown():
-    """Действия при остановке бота"""
+    # по-порядку закрываем всё что открыли
     logger.info("Завершение работы...")
 
     # Закрываем health-сервер
@@ -108,7 +106,7 @@ async def on_shutdown():
 
 
 async def on_error(event: ErrorEvent):
-    """Глобальный обработчик ошибок"""
+    # если что-то упало в любом хендлере — не молчим, а сообщаем юзеру
     logger.error(f"Ошибка в обработчике: {event.update}", exc_info=event.exception)
     try:
         update = event.update
@@ -128,7 +126,7 @@ async def on_error(event: ErrorEvent):
 
 
 def setup_signals(loop):
-    """Настройка обработчиков сигналов"""
+    # ctrl+c чтобы бот закрывался аккуратно, а не так жёстко
     if sys.platform == "win32":
         import threading
         def signal_handler():

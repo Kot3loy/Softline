@@ -1,4 +1,4 @@
-"""Хендлер информационного режима — диалог с AI по выбранному сценарию."""
+# информационный режим — юзер болтает с ботом, бот отвечает через ai по базе знаний
 
 import os
 import logging
@@ -14,6 +14,7 @@ from bot.utils.voice import text_to_speech
 from bot.core.scenarios import answer_info_question, get_welcome_message
 from bot.core.ai_engine import _sanitize_input, _ERROR_MARKERS
 from bot.database.db import update_user, get_or_create_user
+from bot.handlers.start import _replace_card, _remember
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,8 @@ router = Router()
 
 
 def _should_show_disclaimer(answer: str) -> bool:
-    """Показывать дисклеймер только при полезном ответе AI"""
+    # дисклеймер только когда ответ реально содержательный,
+    # а не "извини, ai перегружен"
     if not answer or len(answer) < 80:
         return False
     for marker in _ERROR_MARKERS:
@@ -31,13 +33,12 @@ def _should_show_disclaimer(answer: str) -> bool:
 
 
 class InfoState(StatesGroup):
-    """Состояние информационного режима"""
     in_chat = State()
 
 
 @router.callback_query(F.data.startswith("info_") & ~F.data.startswith("info_from_inline_"))
 async def cb_info_mode(cb: CallbackQuery, state: FSMContext):
-    """Информационный режим — начало диалога"""
+    # кнопка "информационный режим" — приветствие по сценарию
     scenario = cb.data.removeprefix("info_")
     await state.set_state(InfoState.in_chat)
     await state.update_data(scenario=scenario)
@@ -49,17 +50,26 @@ async def cb_info_mode(cb: CallbackQuery, state: FSMContext):
 
     welcome = await get_welcome_message(scenario, lang)
 
-    await cb.message.edit_text(
-        f"{t('info_header', lang)}\n\n{welcome}",
-        reply_markup=back_to_menu_kb(lang),
-        parse_mode="HTML",
-    )
+    # сессия инфо-режима: приветствие только на первом входе
+    from bot.core.ai_engine import has_history
+    if not has_history(cb.from_user.id):
+        await _replace_card(
+            cb.message,
+            f"{t('info_header', lang)}\n\n{welcome}",
+            kb=back_to_menu_kb(lang),
+        )
+    else:
+        await _replace_card(
+            cb.message,
+            t("info_continue", lang),
+            kb=back_to_menu_kb(lang),
+        )
     await cb.answer()
 
 
 @router.message(InfoState.in_chat, F.text & ~F.text.startswith("/") & ~F.text.in_(KNOWN_BUTTONS))
 async def handle_text_message(msg: Message, state: FSMContext):
-    """Обработка текстовых сообщений — ответ через AI"""
+    # любой текст в режиме инфо — вопрос к ai
     data = await state.get_data()
     scenario = data.get("scenario", "university")
     user_id = msg.from_user.id
@@ -99,7 +109,6 @@ async def handle_text_message(msg: Message, state: FSMContext):
                     parse_mode="HTML",
                 )
                 try:
-                    from bot.handlers.start import _remember
                     _remember(msg.chat.id, getattr(sent, "message_id", None))
                 except Exception:
                     pass
@@ -110,7 +119,6 @@ async def handle_text_message(msg: Message, state: FSMContext):
 
     sent = await msg.answer(f"{answer}{disclaimer}", parse_mode="HTML")
     try:
-        from bot.handlers.start import _remember
         _remember(msg.chat.id, getattr(sent, "message_id", None))
     except Exception:
         pass

@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Сценарии бота — системные промпты, информационный режим, приветственные сообщения."""
+# логика информационного режима: вопрос юзера + база знаний -> ответ через ai
 
 import logging
 import asyncio
 from bot.translations import t
-from bot.core.ai_engine import ask_ai, _save_response
+from bot.core.ai_engine import ask_ai, get_history, save_turn
 from bot.core.rag import search
 from bot.core.prompt_registry import prompt_registry
+from bot.utils.translator import translate_html
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ STYLE_RULES = ""
 
 
 async def _get_prompt(name: str) -> str:
-    """Получить промпт из реестра"""
+    # текущая версия промпта из реестра
     content = prompt_registry.get_content(name)
     if content is None:
         logger.warning(f"Промпт {name} не найден в реестре")
@@ -40,11 +41,10 @@ async def _get_system_prompts():
 
 
 async def answer_info_question(question: str, scenario: str, user_id: int = None, lang: str = "ru") -> str:
-    """Ответить на вопрос в информационном режиме (RAG + AI)"""
-    # Ищем релевантные документы (sync → async)
+    # отвечаем на вопрос: ищем в базе знания, склеиваем контекст, просим ai
     docs = await asyncio.to_thread(search, question, 3, None)
 
-    # Формируем контекст из найденных документов
+    # из найденного делаем контекст
     context = ""
     if docs:
         context = t("rag_relevant_info", lang) + "\n\n"
@@ -53,18 +53,29 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
             content = doc.page_content[:1000]
             context += f"{i}. Источник: {source}\n{content}\n\n"
 
-    # Формируем промпт
+    # собираю промпт
     system_prompts = await _get_system_prompts()
     system = system_prompts.get(scenario, await _get_prompt("university"))
 
     frame = f"Тема: {_SCENARIO_TOPICS.get(scenario, _SCENARIO_TOPICS['university'])}.\nДержись темы; на чужой вопрос вежливо верни к своей. Приветствия — коротко и верни к теме.\n\n"
 
+    # история диалога — чтобы бот помнил о чём уже говорили и не здоровался заново
+    history_block = ""
+    if user_id:
+        turns = get_history(user_id)
+        if turns:
+            lines = "\n".join(
+                f"Юзер: {turn['question']}\nТы: {turn['answer']}" for turn in turns
+            )
+            history_block = f"История диалога (это одна сессия, продолжай её):\n{lines}\n\n"
+
     if context:
         prompt = (
-            "{frame}User question: {question}\n\n"
+            "{history}{frame}User question: {question}\n\n"
             "{context}\n\n"
             "{rag_use}"
         ).format(
+            history=history_block,
             frame=frame,
             question=question,
             context=context,
@@ -72,9 +83,10 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
         )
     else:
         prompt = (
-            "{frame}User question: {question}\n\n"
+            "{history}{frame}User question: {question}\n\n"
             "{rag_no}"
         ).format(
+            history=history_block,
             frame=frame,
             question=question,
             rag_no=t("rag_no_context", lang)
@@ -82,15 +94,15 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
 
     answer = await ask_ai(prompt, system, max_tokens=700, strip_md=True)
 
-    # Сохраняем ответ в историю для антиповтора
+    # сохраняю пару вопрос-ответ в память сессии
     if user_id:
-        _save_response(user_id, answer)
+        save_turn(user_id, question, answer)
 
     return answer
 
 
 async def get_welcome_message(scenario: str, lang: str = "ru") -> str:
-    """Приветственное сообщение для сценария"""
+    # приветствие при входе в сценарий
     welcome_key = f"welcome_{scenario}"
     welcome_text = await _get_prompt(welcome_key)
 
@@ -110,17 +122,21 @@ async def get_welcome_message(scenario: str, lang: str = "ru") -> str:
     if examples:
         result += f"\n\n{examples}"
 
+    # в реестре тексты только на русском — для английского переводим на лету
+    if lang != "ru":
+        result = await translate_html(result, lang)
+
     return result
 
 
-# Инициализация обратной совместимости (синхронная загрузка из YAML)
+# старые константы SYSTEM_PROMPTS / STYLE_RULES — их кто-то импортирует, не убираю
 import yaml
 from pathlib import Path
 
 _REGISTRY_PATH = Path(__file__).parent.parent / "prompts" / "registry.yaml"
 
 def _load_prompts_sync():
-    """Синхронная загрузка промптов из YAML для обратной совместимости"""
+    # считываем промпты сразу при импорте (для старой структуры SYSTEM_PROMPTS)
     global SYSTEM_PROMPTS, STYLE_RULES
     try:
         with open(_REGISTRY_PATH, "r", encoding="utf-8") as f:

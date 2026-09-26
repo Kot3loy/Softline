@@ -1,4 +1,4 @@
-"""Конфигурация бота — загрузка переменных окружения из .env файла."""
+# конфиг: всё что нужно боту берём из .env
 
 import os
 import sys
@@ -10,8 +10,6 @@ load_dotenv(BASE_DIR / ".env")
 
 
 class Config:
-    """Основные настройки бота, загружаемые из переменных окружения."""
-
     BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
     GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_CREDENTIALS", "")
@@ -35,7 +33,7 @@ config = Config()
 
 
 def validate_config():
-    """Проверить что критичные переменные заданы."""
+    # если чего-то не хватает в .env — сразу падаем с понятной ошибкой
     errors = []
     if not config.BOT_TOKEN:
         errors.append("BOT_TOKEN не задан")

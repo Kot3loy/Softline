@@ -1,4 +1,4 @@
-"""Генерация клавиатур — Reply и Inline кнопки для всех режимов бота."""
+# все клавиатуры бота (reply + inline)
 
 import logging
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 def main_menu_kb(lang: str = "ru"):
-    """Главное меню — три сценария + настройки"""
+    # главное меню
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=t("btn_university", lang))],
@@ -21,7 +21,7 @@ def main_menu_kb(lang: str = "ru"):
 
 
 def settings_kb(voice_enabled: bool = False, lang: str = "ru"):
-    """Inline клавиатура настроек"""
+    # клавиатура настроек
     voice_text = t("voice_on", lang) if voice_enabled else t("voice_off", lang)
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -37,7 +37,7 @@ def settings_kb(voice_enabled: bool = False, lang: str = "ru"):
 
 
 def scenario_info_kb(scenario: str, lang: str = "ru"):
-    """Кнопки внутри сценария — инфо режим или экзаменатор"""
+    # кнопки выбора режима внутри сценария
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=t("btn_info_mode", lang), callback_data=f"info_{scenario}")],
@@ -48,7 +48,7 @@ def scenario_info_kb(scenario: str, lang: str = "ru"):
 
 
 def exam_cases_kb(lang: str = "ru"):
-    """Выбор количества заданий — 3, 5 или 10"""
+    # сколько заданий потянет юзер
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -62,7 +62,7 @@ def exam_cases_kb(lang: str = "ru"):
 
 
 def case_answer_kb(case_num: int, total: int, lang: str = "ru"):
-    """Кнопки после ответа на задание — следующий или завершить"""
+    # кнопки "дальше" / "показать результат"
     buttons = []
     if case_num < total:
         buttons.append([InlineKeyboardButton(text=t("exam_next", lang), callback_data="next_case")])
@@ -72,7 +72,7 @@ def case_answer_kb(case_num: int, total: int, lang: str = "ru"):
 
 
 def back_to_menu_kb(lang: str = "ru"):
-    """Кнопка возврата в главное меню"""
+    # назад в меню
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=t("btn_back", lang), callback_data="back_to_menu")]
@@ -81,7 +81,7 @@ def back_to_menu_kb(lang: str = "ru"):
 
 
 def choice_answer_kb(options: list):
-    """Клавиатура с вариантами ответа (4 кнопки A/B/C/D)"""
+    # варианты ответа для тестовых заданий
     letters = ["A", "B", "C", "D"]
     if len(options) > 4:
         logger.warning(f"Больше 4 вариантов ({len(options)}), обрезаю до 4")
@@ -97,7 +97,7 @@ def choice_answer_kb(options: list):
 
 
 def progress_kb(lang: str = "ru"):
-    """Клавиатура прогресса — сброс и назад"""
+    # кнопки для экрана прогресса
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=t("progress_reset_btn", lang), callback_data="progress_reset")],

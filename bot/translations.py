@@ -1,4 +1,4 @@
-"""Централизованные переводы UI строк — русский и английский"""
+# все тексты бота в одном месте (русская и английская версии)
 
 STRINGS = {
     # === START MENU ===
@@ -41,9 +41,11 @@ STRINGS = {
     "about_tech": {"ru": "🔧 <b>Технологии:</b> Python, aiogram, GigaChat, edge-tts", "en": "🔧 <b>Tech:</b> Python, aiogram, GigaChat, edge-tts"},
     "about_disclaimer": {
         "ru": "⚠️ <b>Дисклеймер:</b> рекомендации носят информационный характер и не заменяют "
-              "официальные требования вузов и работодателей. Всегда проверяйте актуальную информацию на официальных сайтах.",
+              "официальные требования вузов и работодателей. Всегда проверяйте актуальную информацию на официальных сайтах.\n"
+              "Не сообщайте боту личные данные (телефон, адрес, ФИО).",
         "en": "⚠️ <b>Disclaimer:</b> recommendations are for informational purposes only and do not replace "
-              "official requirements of universities and employers. Always check current information on official websites.",
+              "official requirements of universities and employers. Always check current information on official websites.\n"
+              "Do not share personal data (phone, address, full name) with the bot.",
     },
 
     # === SETTINGS ===
@@ -103,11 +105,17 @@ STRINGS = {
         "ru": "✍️ Напиши свой вопрос — отвечу по теме.",
         "en": "✍️ Ask your question — I'll answer on topic.",
     },
+    "info_continue": {
+        "ru": "✍️ Продолжаем. Спроси что-нибудь ещё по этой теме.",
+        "en": "✍️ Let's continue. Ask me anything else on this topic.",
+    },
     "disclaimer": {
         "ru": "\n\n⚠️ Рекомендации носят информационный характер и не заменяют "
-              "официальные требования вузов и работодателей.",
+              "официальные требования вузов и работодателей. Не пишите боту личные данные "
+              "(телефон, адрес, ФИО).",
         "en": "\n\n⚠️ Recommendations are for informational purposes only and do not replace "
-              "official requirements of universities and employers.",
+              "official requirements of universities and employers. Do not share personal data "
+              "(phone, address, full name) with the bot.",
     },
 
     # === EXAMINER ===
@@ -209,6 +217,10 @@ STRINGS = {
         "ru": "Отлично! У тебя нет слабых областей в этом сценарии.",
         "en": "Great! You have no weak areas in this scenario.",
     },
+    "adaptive_clarify_question": {
+        "ru": "🔎 <b>Уточняющий вопрос</b>\nПо теме «{friendly}» (кейс {case_id}, в среднем {score}) ты пока хромаешь. Давай разберёмся глубже: что именно было самым сложным и что ты теперь будешь делать иначе?",
+        "en": "🔎 <b>Clarifying question</b>\nYou are weak on \"{friendly}\" (case {case_id}, average {score}). Let's dig deeper: what was the hardest part, and what will you do differently now?",
+    },
     "adaptive_recommendation": {
         "ru": 'Задание «{case_id}» ({friendly}) — средний балл {score:.1f}, повтори его',
         "en": 'Task "{case_id}" ({friendly}) — avg score {score:.1f}, review it',
@@ -299,7 +311,7 @@ STRINGS = {
 
 
 def t(key, lang="ru", **kwargs):
-    """Получить перевод по ключу"""
+    # достаю строку по ключу, подставляю аргументы если есть
     if lang not in ("ru", "en"):
         lang = "ru"
     template = STRINGS.get(key, {}).get(lang) or STRINGS.get(key, {}).get("ru", key)

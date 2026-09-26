@@ -1,4 +1,4 @@
-"""Модуль голоса — преобразование текста в речь (edge-tts) и речи в текст (SpeechRecognition)."""
+# голос: текст -> речь (edge-tts), речь -> текст (Google STT через SpeechRecognition)
 
 import logging
 import re
@@ -16,7 +16,7 @@ VOICE_FEMALE = "ru-RU-SvetlanaNeural"
 
 
 def prepare_text_for_voice(text: str) -> str:
-    """Очистить текст от markdown/HTML/эмодзи для озвучки"""
+    # tts не умеет читать эмодзи и *, тут просто вычищаю текст
     if not text:
         return ""
 
@@ -93,7 +93,7 @@ def prepare_text_for_voice(text: str) -> str:
 
 
 async def text_to_speech(text: str, lang: str = "ru", voice: str | None = None) -> str | None:
-    """Преобразовать текст в голосовое сообщение через edge-tts (нейронные голоса)"""
+    # превращаю текст в голосовое сообщение, сначала пробую edge-tts, если он лег — гтts
     clean_text = prepare_text_for_voice(text)
     voice = voice or VOICE_MALE
 
@@ -140,13 +140,8 @@ async def text_to_speech(text: str, lang: str = "ru", voice: str | None = None) 
 
 
 async def speech_to_text(audio_file_path: str) -> tuple:
-    """Распознать wav-файл в текст (Google STT, только русский язык).
-
-    Возвращает (text, error_kind):
-      ("привет", None)       — распознано
-      (None, "no_speech")    — речь не расслышана
-      (None, "service")      — нет ответа от сервиса распознавания
-    """
+    # распознаю wav в текст через google stt (только русский)
+    # возвращает (текст, тип_ошибки): ("привет", None) — ок, (None, "service") — сервис лёг
     try:
         import speech_recognition as sr
     except ImportError:
@@ -161,13 +156,13 @@ async def speech_to_text(audio_file_path: str) -> tuple:
         with sr.AudioFile(audio_file_path) as source:
             audio = recognizer.record(source)
 
-        # Проект онлайн, распознавание всегда на русском
+        # распознаём всегда на русском
         text = recognizer.recognize_google(audio, language="ru-RU")
         logger.info(f"Распознан текст: {text[:100]}...")
         return text, None
 
     except sr.UnknownValueError:
-        # Сервис ответил, но речь не разобрал
+        # сервис ответил, но речь не разобрал
         logger.info("STT: речь не распознана")
         return None, "no_speech"
 

@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class PDFReport(FPDF):
-    """Класс для генерации PDF-отчётов"""
 
     _use_dejavu = False
 
@@ -60,7 +59,7 @@ class PDFReport(FPDF):
 
 
 def _find_font():
-    """Находит путь к шрифту с поддержкой кириллицы"""
+    # фпдф из коробки кириллицу не печатает — ищем шрифт дежаю на машине
     font_paths = [
         # DejaVu — отличная поддержка кириллицы
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -78,7 +77,7 @@ def _find_font():
 
 
 def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
-    """Сгенерировать PDF-отчёт"""
+    # сам отчёт: сценарий, баллы по заданиям, рекомендации, источники, дисклеймер
     font_path = _find_font()
     use_dejavu = font_path is not None
 
@@ -111,41 +110,44 @@ def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
         pdf.add_score(avg_label, round(avg_score))
         pdf.ln(5)
 
+        # честно показываем сколько отвечено, а сколько было всего
+        cases_total = max(
+            (a.get("cases_total") or 0 for a in case_answers if a.get("cases_total")),
+            default=len(case_answers),
+        )
+        answered_label = (
+            f"Answered: {len(case_answers)} of {cases_total}"
+            if lang == "en"
+            else f"Отвечено заданий: {len(case_answers)} из {cases_total}"
+        )
+        pdf.chapter_body(answered_label)
+        if cases_total > len(case_answers):
+            skipped_label = (
+                f"Skipped: {cases_total - len(case_answers)}"
+                if lang == "en"
+                else f"Пропущено заданий: {cases_total - len(case_answers)}"
+            )
+            pdf.chapter_body(skipped_label)
+        pdf.ln(3)
+
         details_label = "Task details:" if lang == "en" else "Детали по заданиям:"
         pdf.chapter_title(details_label)
-        for i, answer in enumerate(case_answers, 1):
+        for answer in case_answers:
             score = answer.get("score", 0)
             feedback = answer.get("feedback", "")
-            case_id = answer.get("case_id", f"#{i}")
+            case_id = answer.get("case_id", "")
+            # реальный номер задания из case_id вида job_5
+            number = case_id.rsplit("_", 1)[-1] if "_" in case_id else "?"
 
             task_label = "Task" if lang == "en" else "Задание"
             pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "B", 11)
-            pdf.cell(0, 7, f"{task_label} {i} ({case_id}): {score}/10")
-            pdf.ln(7)
-            pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "", 10)
-            pdf.multi_cell(0, 6, feedback)
-            pdf.ln(2)
-    elif results:
-        total_score = sum(r.get("score", 0) for r in results)
-        avg_score = total_score / max(len(results), 1)
-
-        avg_label = "Average score" if lang == "en" else "Средний балл"
-        pdf.add_score(avg_label, round(avg_score))
-        pdf.ln(5)
-
-        details_label = "Details:" if lang == "en" else "Детали:"
-        pdf.chapter_title(details_label)
-        for i, result in enumerate(results, 1):
-            score = result.get("score", 0)
-            feedback = result.get("feedback", "")
-            task_label = "Task" if lang == "en" else "Задание"
-            pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "B", 11)
-            pdf.cell(0, 7, f"{task_label} {i}: {score}/10")
+            pdf.cell(0, 7, f"{task_label} {number} ({case_id}): {score}/10")
             pdf.ln(7)
             pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "", 10)
             pdf.multi_cell(0, 6, feedback)
             pdf.ln(2)
     else:
+        # без ответов не выдумываем задания — просто говорим, что данных нет
         no_results = t("pdf_no_results", lang)
         pdf.chapter_body(no_results)
 
@@ -195,7 +197,7 @@ def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
     # Дисклеймер
     disclaimer_label = "Disclaimer" if lang == "en" else "Дисклеймер"
     pdf.chapter_title(disclaimer_label)
-    # Убираем эмодзи и переносы — не все шрифты содержат глиф ⚠️
+    # вырезаю эмодзи из дисклеймера — шрифт дежаю его не знает
     disclaimer_text = t("disclaimer", lang).strip().lstrip("\u26a0\ufe0f").strip()
     pdf.chapter_body(disclaimer_text)
 

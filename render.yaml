@@ -1,8 +1,9 @@
 services:
-  - type: worker
+  - type: web
     name: softline-bot
     runtime: python
     plan: free
+    healthCheckPath: /health
     buildCommand: >-
       pip install -r requirements.txt &&
       (test -x bin/ffmpeg ||
@@ -23,9 +24,10 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: INFO
+      - key: PORT
+        value: 8080
       - key: PYTHON_VERSION
         value: 3.12.0
-    disk:
-      name: data
-      mountPath: /opt/render/project/src/database
-      sizeGB: 1
+    # На free-тайре persistent disks не поддерживаются.
+    # Файловая система эфемерна: данные БД и learning_errors.json
+    # потеряются при редеплое или рестарте — для демо приемлемо.

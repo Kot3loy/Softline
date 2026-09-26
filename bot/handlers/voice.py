@@ -1,4 +1,4 @@
-"""Хендлер голосовых сообщений — STT, TTS, переключение голосового режима."""
+# голосовые сообщения: распознаю (stt), потом отвечаю и озвучиваю (tts)
 
 import logging
 import tempfile
@@ -65,7 +65,7 @@ router = Router()
 
 @dataclass
 class VoiceMessage:
-    """Обёртка для голосового сообщения, совместимая с handle_exam_answer"""
+    # обёртка под голосовое: handle_exam_answer ждёт обычный msg с .text
     text: str
     from_user: User
     chat: Chat
@@ -80,7 +80,7 @@ class VoiceMessage:
 
 @router.message(F.voice)
 async def handle_voice(msg: Message, state: FSMContext):
-    """Обработка голосовых сообщений"""
+    # юзер скинул голосовое — распознаю и отвечу (в экзаменаторе как ответ на задание)
     current_state = await state.get_state()
 
     if current_state and "ExamState" in str(current_state):
@@ -131,7 +131,7 @@ async def handle_voice(msg: Message, state: FSMContext):
 
         answer = await answer_info_question(text, scenario, user_id=user_id, lang=lang)
 
-        # Переводим ответ если язык не русский
+        # если юзер не на русском — перевожу ответ
         if lang != "ru":
             from bot.utils.translator import translate_text
             answer = await translate_text(answer, target_lang=lang)
@@ -163,7 +163,7 @@ async def handle_voice(msg: Message, state: FSMContext):
 
 
 async def _handle_voice_exam(msg: Message, state: FSMContext):
-    """Обработка голосового сообщения в режиме экзаменатора"""
+    # голос как ответ на задание
     from bot.handlers.examiner import handle_exam_answer
 
     if not _VOICE_AVAILABLE:

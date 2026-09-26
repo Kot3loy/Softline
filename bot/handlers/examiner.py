@@ -1,7 +1,8 @@
-"""Хендлер режима экзаменатора — генерация и оценка заданий."""
+# экзаменатор: бот генерирует задания, юзер отвечает, ai оценивает
 
 import time
 import asyncio
+import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -11,9 +12,12 @@ from bot.translations import t
 from bot.utils.keyboards import exam_cases_kb, case_answer_kb, choice_answer_kb
 from bot.utils.lang import get_lang
 from bot.core.ai_engine import generate_case, evaluate_answer, _strip_markdown
-from bot.core.adaptive import record_error, get_weak_areas, get_recommendations
+from bot.core.adaptive import record_error, get_weak_areas, get_recommendations, get_clarifying_question
 from bot.core.common_mistakes import find_mistakes
 from bot.database.db import create_session, end_session, save_case_answer, update_user, get_or_create_user
+from bot.handlers.start import _replace_card
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -21,7 +25,6 @@ SESSION_TTL = 1800  # 30 минут
 
 
 class ExamState(StatesGroup):
-    """Состояния экзаменатора"""
     waiting_for_answer = State()
     session_active = State()
 
@@ -32,6 +35,7 @@ exam_sessions: dict[int, dict] = {}  # user_id -> {scenario, cases, current, ses
 
 
 def _cleanup_expired_sessions():
+    # сессии висят в памяти — удаляю те что неактивны больше 30 минут
     now = time.time()
     expired = [uid for uid, s in exam_sessions.items() if now - s.get("timestamp", 0) > SESSION_TTL]
     for uid in expired:
@@ -44,15 +48,55 @@ def _cleanup_expired_sessions():
 
 
 async def _translate_if_needed(text: str, lang: str) -> str:
-    """Перевести текст если язык не русский"""
+    # ai думает на русском, а юзеру отвечаем на его языке
     if lang == "ru" or not text:
         return text
     from bot.utils.translator import translate_text
     return await translate_text(text, target_lang=lang)
 
 
+async def _drop_message(bot, chat_id, message_id):
+    # удаляем сообщение с заданием, чтобы чат не засорялся.
+    # сообщение могли удалить руками — тогда просто молча идём дальше
+    if not message_id or not chat_id:
+        return
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception as e:
+        logger.debug(f"Не удалось удалить сообщение {message_id}: {e}")
+
+
+async def _drop_case(session: dict, bot):
+    # убрать текущее задание и забыть его id
+    await _drop_message(bot, session.get("chat_id"), session.get("case_msg_id"))
+    session["case_msg_id"] = None
+
+
+async def abandon_exam(user_id: int):
+    # юзер вышел из экзамена не до конца — записываем реальные цифры,
+    # иначе сессия навсегда остаётся незавершённой и не попадает в отчёт
+    session = exam_sessions.pop(user_id, None)
+    if not session:
+        return
+
+    scores = session.get("scores") or []
+    answered = len(scores)
+    avg_score = sum(scores) / answered if answered else 0
+    session_id = session.get("session_id")
+
+    if session_id and not session.get("_ended"):
+        try:
+            await end_session(session_id, answered, avg_score)
+        except Exception as e:
+            logger.warning(f"Не удалось закрыть сессию {session_id}: {e}")
+        else:
+            logger.info(f"Экзамен закрыт досрочно: user={user_id}, отвечено {answered}")
+
+
 async def _finalize_exam(user_id: int, session: dict, message, lang: str):
-    """Завершить экзамен — end_session, результаты, очистка сессии"""
+    # финал: считаем средний балл, сохраняем сессию в бд, показываем итоги
+    # на всякий случай убираем последнее задание, если оно ещё висит
+    await _drop_case(session, getattr(message, "bot", None))
     answered = len(session["scores"])
     avg_score = sum(session["scores"]) / len(session["scores"]) if session["scores"] else 0
 
@@ -71,6 +115,11 @@ async def _finalize_exam(user_id: int, session: dict, message, lang: str):
         for r in recommendations:
             result_text += f"  • {r}\n"
 
+    # уточняющий вопрос по самой слабой теме (появляется с 2-й сессии)
+    clarify = get_clarifying_question(user_id, session["scenario"], lang)
+    if clarify:
+        result_text += f"\n\n{clarify}"
+
     # Дисклеймер — рекомендации носят информационный характер
     result_text += f"\n\n{t('disclaimer', lang)}"
 
@@ -85,7 +134,7 @@ async def _finalize_exam(user_id: int, session: dict, message, lang: str):
 
 @router.callback_query(F.data.startswith("exam_"))
 async def cb_examiner_mode(cb: CallbackQuery):
-    """Режим экзаменатора — выбор количества кейсов"""
+    # юзер нажал "экзаменатор" — показываю выбор количества заданий
     scenario = cb.data.replace("exam_", "")
     await update_user(cb.from_user.id, current_scenario=scenario)
 
@@ -94,17 +143,17 @@ async def cb_examiner_mode(cb: CallbackQuery):
 
     if not cb.message:
         return
-    await cb.message.edit_text(
+    await _replace_card(
+        cb.message,
         f"{t('exam_header', lang)}\n\n{t('exam_intro', lang)}",
-        reply_markup=exam_cases_kb(lang),
-        parse_mode="HTML",
+        kb=exam_cases_kb(lang),
     )
     await cb.answer()
 
 
 @router.callback_query(F.data.startswith("cases_"))
 async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
-    """Начало экзамена — генерация первого кейса"""
+    # генерирую все задания сразу (чтобы потом не ждать ai между кейсами)
     try:
         count = int(cb.data.replace("cases_", ""))
     except ValueError:
@@ -123,11 +172,11 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
     session_id = await create_session(user_id, scenario, "examiner", count)
     await cb.answer()
 
-    await cb.message.edit_text(
-        t("exam_start", lang, n=count),
-        reply_markup=None,
-        parse_mode="HTML",
-    )
+    # экзамен — новая сессия, инфо-история больше не нужна
+    from bot.core.ai_engine import clear_history
+    clear_history(user_id)
+
+    await _replace_card(cb.message, t("exam_start", lang, n=count), kb=None)
 
     weak_areas = get_weak_areas(user_id, scenario)
 
@@ -152,6 +201,9 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
         "answers": [],
         "scores": [],
         "timestamp": time.time(),
+        "chat_id": cb.message.chat.id,
+        "case_msg_id": None,
+        "feedback_msg_id": None,
     }
 
     case = cases[0]
@@ -159,17 +211,18 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
     question_text = t("exam_question", lang, text=case['question'])
 
     if case.get("type") == "choice":
-        await cb.message.answer(
+        sent = await cb.message.answer(
             f"{task_header}\n\n{case['situation']}\n\n{question_text}",
             reply_markup=choice_answer_kb(case.get("options", [])),
             parse_mode="HTML",
         )
     else:
-        await cb.message.answer(
+        sent = await cb.message.answer(
             f"{task_header}\n\n{case['situation']}\n\n{question_text}",
             reply_markup=case_answer_kb(1, count, lang),
             parse_mode="HTML",
         )
+    exam_sessions[user_id]["case_msg_id"] = getattr(sent, "message_id", None)
     await state.set_state(ExamState.waiting_for_answer)
 
 
@@ -193,22 +246,26 @@ async def cb_next_case(cb: CallbackQuery, state: FSMContext):
         return
     await cb.answer()
 
+    # если текущее задание так и осталось без ответа — убираем его из чата
+    await _drop_case(session, cb.bot)
+
     case = session["cases"][current_idx]
     task_header = t("exam_task", lang, n=current_idx + 1, total=session['total'])
     question_text = t("exam_question", lang, text=case['question'])
 
     if case.get("type") == "choice":
-        await cb.message.answer(
+        sent = await cb.message.answer(
             f"{task_header}\n\n{case['situation']}\n\n{question_text}",
             reply_markup=choice_answer_kb(case.get("options", [])),
             parse_mode="HTML",
         )
     else:
-        await cb.message.answer(
+        sent = await cb.message.answer(
             f"{task_header}\n\n{case['situation']}\n\n{question_text}",
             reply_markup=case_answer_kb(current_idx + 1, session["total"], lang),
             parse_mode="HTML",
         )
+    session["case_msg_id"] = getattr(sent, "message_id", None)
     await state.set_state(ExamState.waiting_for_answer)
 
 
@@ -287,6 +344,9 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
     next_idx = current_idx + 1
     await cb.answer()
 
+    # задание отработало — убираем его из чата, разбор остаётся
+    await _drop_case(session, cb.bot)
+
     if next_idx >= session["total"]:
         await _finalize_exam(user_id, session, cb.message, lang)
         await state.clear()
@@ -294,7 +354,8 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
         next_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=t("exam_next", lang), callback_data="next_case")]
         ])
-        await cb.message.answer(text, reply_markup=next_kb, parse_mode="HTML")
+        sent = await cb.message.answer(text, reply_markup=next_kb, parse_mode="HTML")
+        session["feedback_msg_id"] = getattr(sent, "message_id", None)
 
 
 @router.callback_query(F.data == "show_results")
@@ -312,6 +373,19 @@ async def cb_show_results(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     await state.clear()
     await _finalize_exam(user_id, session, cb.message, lang)
+
+
+async def _format_mistakes(mistakes: list, lang: str) -> str:
+    # типовые ошибки хранятся в коде на русском — для английского переводим
+    if not mistakes:
+        return ""
+    block = t("exam_typical_errors", lang) + "\n"
+    for m in mistakes[:2]:
+        error = await _translate_if_needed(m["error"], lang)
+        advice = await _translate_if_needed(m["advice"], lang)
+        block += f"  • {error}\n"
+        block += f"    {t('exam_advice', lang, text=advice)}\n"
+    return block
 
 
 @router.message(ExamState.waiting_for_answer)
@@ -386,12 +460,7 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
 
     text = f"{t('exam_score', lang, n=score)}\n\n{feedback}\n\n"
 
-    mistakes = find_mistakes(user_answer_text)
-    if mistakes:
-        text += t("exam_typical_errors", lang) + "\n"
-        for m in mistakes[:2]:
-            text += f"  • {m['error']}\n"
-            text += f"    {t('exam_advice', lang, text=m['advice'])}\n"
+    text += await _format_mistakes(find_mistakes(user_answer_text), lang)
 
     if strengths:
         text += t("exam_strengths", lang) + "\n"
@@ -421,6 +490,9 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
 
     next_idx = current_idx + 1
 
+    # задание отработало — убираем текст задания, разбор остаётся
+    await _drop_case(session, msg.bot)
+
     if next_idx >= session["total"]:
         await _finalize_exam(user_id, session, msg, lang)
         await state.clear()
@@ -428,4 +500,5 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
         next_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=t("exam_next", lang), callback_data="next_case")]
         ])
-        await msg.answer(text, reply_markup=next_kb, parse_mode="HTML")
+        sent = await msg.answer(text, reply_markup=next_kb, parse_mode="HTML")
+        session["feedback_msg_id"] = getattr(sent, "message_id", None)

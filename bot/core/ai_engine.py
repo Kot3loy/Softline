@@ -1,4 +1,4 @@
-"""AI-движок — генерация заданий, оценка ответов, работа с GigaChat API."""
+# ai-движок — генерация заданий, оценка ответов, работа с gigachat api
 
 import logging
 import json
@@ -13,10 +13,10 @@ from bot.core.rag import search
 logger = logging.getLogger(__name__)
 
 
+# слова которые gigachat иногда подмешивает в ответы
 SLANG_WORDS = {"норм", "братан", "чувак", "дружище"}
 
 def strip_slang(text: str) -> str:
-    """Убрать сленговые слова из текста ответа ИИ"""
     if not text:
         return text
     result = text
@@ -29,32 +29,27 @@ def strip_slang(text: str) -> str:
     return result.strip()
 
 def _strip_markdown(text: str) -> str:
-    """Убрать markdown-разметку из текста AI"""
+    # gigachat любит жирный и заголовки, тут я это вычищаю
     if not text:
         return text
-    # Заголовки ## / ### / ####
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    # Жирный текст жирным шрифтом (**text**)
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
-    # Курсивный текст курсивом (*text_), внимательно: не трогаем односимвольные
     text = re.sub(r'\*{2,}(.+?)\*{2,}', r'\1', text)
-    # Горизонтальные линии ---
     text = re.sub(r'^---+$', '', text, flags=re.MULTILINE)
-    # Списки — пункты или *пункт
     text = re.sub(r'^[\s]*[-*]\s+', '• ', text, flags=re.MULTILINE)
-    # Убрать пустые строки подряд (макс 2)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
 _client: "GigaChatAsyncClient | None" = None
 _client_lock = asyncio.Lock()
 
-_last_responses: dict[int, list] = {}
-MAX_HISTORY = 3
+# память диалога инфо-режима: последние пары вопрос-ответ
+_sessions: dict[int, list[dict]] = {}
+MAX_TURNS = 4
 
-_last_responses_ttl: dict[int, float] = {}
-RESPONSES_TTL = 3600
+_sessions_ttl: dict[int, float] = {}
+SESSIONS_TTL = 3600
 
 _cleanup_counter = 0
 _CLEANUP_INTERVAL = 50
@@ -71,14 +66,14 @@ _ERROR_MARKERS = (
 
 
 def _sanitize_input(text: str) -> str:
-    """Санитизация пользовательского ввода — защита от prompt injection"""
+    # чистим ввод пользователя — защита от prompt injection
     if not text:
         return ""
 
-    # Обрезаем до разумной длины
+    # обрезаю до разумной длины
     text = text[:2000]
 
-    # Убираем потенциально опасные инструкции
+    # убираю опасные инструкции типа "ignore all previous instructions"
     dangerous_patterns = [
         r'ignore\s+(all\s+)?previous\s+instructions',
         r'ignore\s+all\s+prior',
@@ -102,16 +97,16 @@ def _sanitize_input(text: str) -> str:
 
 
 def _cleanup_old_data():
-    """Очистить устаревшие данные"""
+    # чистим старые сессии (неактивны больше часа)
     now = time.time()
-    expired_users = [uid for uid, t in _last_responses_ttl.items() if now - t > RESPONSES_TTL]
+    expired_users = [uid for uid, ts in _sessions_ttl.items() if now - ts > SESSIONS_TTL]
     for uid in expired_users:
-        _last_responses.pop(uid, None)
-        _last_responses_ttl.pop(uid, None)
+        _sessions.pop(uid, None)
+        _sessions_ttl.pop(uid, None)
 
 
 async def _get_client():
-    """Ленивая инициализация GigaChat async-клиента"""
+    # создаю клиента gigachat только когда он нужен (ленивая инициализация)
     global _client
     async with _client_lock:
         if _client is None:
@@ -129,18 +124,39 @@ async def _get_client():
         return _client
 
 
-def _save_response(user_id: int, response: str):
-    """Сохранить ответ в историю"""
-    if user_id not in _last_responses:
-        _last_responses[user_id] = []
-    _last_responses[user_id].append(response[:500])
-    if len(_last_responses[user_id]) > MAX_HISTORY:
-        _last_responses[user_id] = _last_responses[user_id][-MAX_HISTORY:]
-    _last_responses_ttl[user_id] = time.time()
+def get_history(user_id: int) -> list[dict]:
+    # история диалога пользователя, older сессии чистим по ttl
+    if not user_id:
+        return []
+    _cleanup_old_data()
+    return _sessions.get(user_id, [])
+
+
+def has_history(user_id: int) -> bool:
+    return bool(get_history(user_id))
+
+
+def save_turn(user_id: int, question: str, answer: str):
+    # запоминаю пару вопрос-ответ, чтобы бот держал контекст диалога
+    if not user_id:
+        return
+    turns = _sessions.setdefault(user_id, [])
+    turns.append({"question": (question or "")[:400], "answer": (answer or "")[:600]})
+    if len(turns) > MAX_TURNS:
+        _sessions[user_id] = turns[-MAX_TURNS:]
+    _sessions_ttl[user_id] = time.time()
+
+
+def clear_history(user_id: int):
+    # выход из меню — сессия обрывается
+    if not user_id:
+        return
+    _sessions.pop(user_id, None)
+    _sessions_ttl.pop(user_id, None)
 
 
 def _parse_json(text: str, default: dict) -> dict:
-    """Парсинг JSON из ответа AI (может быть в markdown code blocks)"""
+    # парсю json из ответа ai (он иногда прячет его в ```json``` блоках)
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r'^```(?:json)?\s*\n?', '', text)
@@ -169,7 +185,7 @@ def _parse_json(text: str, default: dict) -> dict:
 
 
 def _parse_text_response(text: str, case_type: str) -> dict:
-    """Парсинг текстового ответа GigaChat когда JSON не вернулся"""
+    # если ai вернул не json, а просто текст — парсю его по строкам
     lines = text.strip().split("\n")
 
     situation = ""
@@ -216,7 +232,7 @@ def _parse_text_response(text: str, case_type: str) -> dict:
 
 
 async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 700, strip_md: bool = False) -> str:
-    """Отправить запрос к AI через GigaChat с retry"""
+    # отправляю запрос к gigachat, 3 попытки при ошибке
 
     messages = []
     if system_prompt:
@@ -255,7 +271,7 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 700, st
 
 
 async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list | None = None, case_type: str = "open") -> dict:
-    """Сгенерировать задание для экзаменатора с retry"""
+    # генерирую задание для экзаменатора через ai
     global _cleanup_counter
     _cleanup_counter += 1
     if _cleanup_counter % _CLEANUP_INTERVAL == 0:
@@ -378,8 +394,54 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
     }
 
 
+_SCORE_PATTERNS = (
+    r"оценка\s*[:\-—]?\s*(\d{1,2})",
+    r"\b(\d{1,2})\s*(?:/|из)\s*10\b",
+    r"\b(\d{1,2})\s*балл",
+    r"^\s*(\d{1,2})\s*$",
+)
+
+MIN_ANSWER_WORDS = 12
+
+
+def _parse_score_text(text: str) -> dict | None:
+    # ai мог ответить текстом, а не json — вытаскиваем оценку из текста
+    if not text:
+        return None
+    for pattern in _SCORE_PATTERNS:
+        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if not match:
+            continue
+        score = int(match.group(1))
+        if 0 <= score <= 10:
+            return {
+                "score": score,
+                "feedback": _strip_markdown(text)[:900],
+                "strengths": [],
+                "weaknesses": [],
+                "recommendations": [],
+                "example_answer": "",
+                "source": "",
+            }
+    return None
+
+
+def _vague_answer_feedback() -> dict:
+    # ответ из пары слов — объясняем, чего не хватило, вместо молчания
+    return {
+        "score": 3,
+        "feedback": "Ответ вышел общим, без конкретики. Разбери ситуацию по шагам: "
+                    "что именно сказала бы Аня, какое действие предприняла и почему.",
+        "strengths": [],
+        "weaknesses": ["Ответ без конкретных шагов"],
+        "recommendations": [],
+        "example_answer": "",
+        "source": "",
+    }
+
+
 async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
-    """Оценить ответ пользователя на задание с retry + RAG контекст из базы знаний"""
+    # оцениваю ответ пользователя: ищу релевантные материалы в базе знаний, потом прошусь у ai
     global _cleanup_counter
     _cleanup_counter += 1
     if _cleanup_counter % _CLEANUP_INTERVAL == 0:
@@ -402,7 +464,7 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
 
     context = ""
     if rag_docs:
-        # lang will be ru for internal processing; translation happens in handlers
+        # внутри всё в русском, перевод ответа уже в хендлере
         context = "Найденная релевантная информация:\n\n"
         for i, doc in enumerate(rag_docs, 1):
             src = doc.metadata.get("source", "Неизвестно")
@@ -476,19 +538,19 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
                 await asyncio.sleep(RETRY_DELAY)
             continue
 
-        parsed = _parse_json(result, {
-            "score": 5,
-            "feedback": "Не удалось оценить ответ",
-            "strengths": [],
-            "weaknesses": [],
-            "recommendations": [],
-            "example_answer": "",
-            "source": "",
-        })
+        # разбираем ответ: сначала ждём json, если его нет — пробуем вытащить оценку из текста
+        parsed = _parse_json(result, {})
+        if not parsed or not isinstance(parsed.get("score"), (int, float)):
+            parsed = _parse_score_text(result) or {}
 
         # Гарантируем, что счет — целое число от 0 до 10
         if isinstance(parsed.get("score"), (int, float)):
             parsed["score"] = max(0, min(10, int(parsed["score"])))
+            parsed.setdefault("strengths", [])
+            parsed.setdefault("weaknesses", [])
+            parsed.setdefault("recommendations", [])
+            parsed.setdefault("example_answer", "")
+            parsed.setdefault("source", "")
             # Успешно получили валидный ответ
             if "feedback" in parsed and isinstance(parsed["feedback"], str):
                 parsed["feedback"] = parsed["feedback"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -500,6 +562,11 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
 
     # Все попытки исчерпаны
     logger.error(f"evaluate_answer: не удалось после {MAX_RETRIES} попыток")
+
+    # если ответ совсем короткий — честно скажем, чего не хватило
+    if len(user_answer.split()) < MIN_ANSWER_WORDS:
+        return _vague_answer_feedback()
+
     return {
         "score": 5,
         "feedback": "AI сейчас перегружен — оценка приблизительная. Попробуй позже для точной обратной связи.",
