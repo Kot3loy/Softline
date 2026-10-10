@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-# логика информационного режима: вопрос юзера + база знаний -> ответ через ai
+# Info-режим. Пользователь спрашивает — бот ищет в базе и отвечает через GigaChat.
+# Простой код. Без воды.
 
 import logging
 import asyncio
@@ -15,6 +16,7 @@ _SCENARIO_TOPICS = {
     "university": "выбор вуза, поступление, ЕГЭ, студенческая жизнь",
     "job": "поиск работы, резюме, собеседования, стажировки, карьера",
     "adaptation": "адаптация на новой работе, коллеги, рабочий этикет",
+    "lead": "лидерство, управление командой, принятие решений, стратегическое мышление",
 }
 
 # Алиасы обратной совместимости
@@ -37,6 +39,7 @@ async def _get_system_prompts():
         "university": await _get_prompt("university"),
         "job": await _get_prompt("job"),
         "adaptation": await _get_prompt("adaptation"),
+        "lead": await _get_prompt("lead"),
     }
 
 
@@ -144,7 +147,7 @@ def _load_prompts_sync():
         
         prompts = data.get("prompts", {})
         SYSTEM_PROMPTS = {}
-        for name in ("university", "job", "adaptation"):
+        for name in ("university", "job", "adaptation", "lead"):
             prompt_data = prompts.get(name, {}).get("versions", [])
             if prompt_data:
                 SYSTEM_PROMPTS[name] = prompt_data[0].get("content", "")
