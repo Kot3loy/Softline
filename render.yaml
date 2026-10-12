@@ -19,7 +19,7 @@ services:
       - key: GIGACHAT_MODEL
         value: GigaChat-2
       - key: GIGACHAT_VERIFY_SSL_CERTS
-        value: "true"
+        value: "false"
       - key: ADMIN_IDS
         sync: false
       - key: LOG_LEVEL

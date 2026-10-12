@@ -65,7 +65,7 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
     # история диалога — чтобы бот помнил о чём уже говорили и не здоровался заново
     history_block = ""
     if user_id:
-        turns = get_history(user_id)
+        turns = await get_history(user_id)
         if turns:
             lines = "\n".join(
                 f"Юзер: {turn['question']}\nТы: {turn['answer']}" for turn in turns
@@ -99,7 +99,7 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
 
     # сохраняю пару вопрос-ответ в память сессии
     if user_id:
-        save_turn(user_id, question, answer)
+        await save_turn(user_id, question, answer)
 
     return answer
 

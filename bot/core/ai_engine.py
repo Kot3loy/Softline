@@ -9,6 +9,7 @@ from gigachat import GigaChatAsyncClient
 from gigachat.models import ChatCompletionRequest, ChatMessage, ChatModelOptions
 from bot.config import config
 from bot.core.rag import search
+from bot.database.db import save_dialog, get_dialog
 
 logger = logging.getLogger(__name__)
 
@@ -124,22 +125,31 @@ async def _get_client():
         return _client
 
 
-def get_history(user_id: int) -> list[dict]:
-    # история диалога пользователя, older сессии чистим по ttl
+async def get_history(user_id: int) -> list[dict]:
+    # история диалога из БД (persist) — теперь запоминает
     if not user_id:
         return []
-    _cleanup_old_data()
-    return _sessions.get(user_id, [])
+    try:
+        turns = await get_dialog(user_id, MAX_TURNS)
+        if turns:
+            return turns
+    except Exception:
+        pass
+    return []
 
 
-def has_history(user_id: int) -> bool:
-    return bool(get_history(user_id))
+async def has_history(user_id: int) -> bool:
+    return bool(await get_history(user_id))
 
 
-def save_turn(user_id: int, question: str, answer: str):
-    # запоминаю пару вопрос-ответ, чтобы бот держал контекст диалога
+async def save_turn(user_id: int, question: str, answer: str):
+    # запоминаю пару вопрос-ответ в БД (persist)
     if not user_id:
         return
+    try:
+        await save_dialog(user_id, (question or "")[:400], (answer or "")[:600])
+    except Exception as e:
+        logger.warning(f"Не удалось сохранить диалог в БД: {e}")
     turns = _sessions.setdefault(user_id, [])
     turns.append({"question": (question or "")[:400], "answer": (answer or "")[:600]})
     if len(turns) > MAX_TURNS:

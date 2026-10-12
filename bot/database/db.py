@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 DB_PATH = config.DATABASE_DIR / config.DATABASE_NAME
 _db = None
 _db_lock = asyncio.Lock()
-_DB_VERSION = 3
+_DB_VERSION = 4
 
 
 async def _get_db():
@@ -112,6 +112,18 @@ async def _create_tables(db):
     """)
 
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS dialog_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            question TEXT,
+            answer TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_dialog_user ON dialog_history(user_id)")
+    await db.commit()
+
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS case_answers (
             answer_id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL,
@@ -137,6 +149,14 @@ async def _migrate(db, from_version):
         await db.execute("CREATE INDEX IF NOT EXISTS idx_answers_user ON case_answers(user_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_answers_session ON case_answers(session_id)")
         logger.info("Миграция v1→v2: добавлены индексы")
+
+    if from_version < 4:
+        try:
+            await db.execute("CREATE TABLE IF NOT EXISTS dialog_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, question TEXT, answer TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_dialog_user ON dialog_history(user_id)")
+            logger.info("Миграция v3→v4: добавлена таблица dialog_history")
+        except Exception as e:
+            logger.warning(f"Миграция dialog_history не удалась: {e}")
 
     if from_version < 3:
         try:
@@ -344,3 +364,32 @@ async def get_global_stats():
         "total_answers": total_answers,
         "by_scenario": scenarios,
     }
+
+
+async def save_dialog(user_id: int, question: str, answer: str):
+    # сохранить диалог для памяти
+    db = await _get_db()
+    await db.execute(
+        "INSERT INTO dialog_history (user_id, question, answer) VALUES (?, ?, ?)",
+        (user_id, question, answer),
+    )
+    await db.execute(
+        "DELETE FROM dialog_history WHERE user_id = ? AND id NOT IN (SELECT id FROM dialog_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 4)",
+        (user_id, user_id),
+    )
+    await db.commit()
+
+
+async def get_dialog(user_id: int, limit: int = 4) -> list:
+    # загрузить диалог из базы
+    db = await _get_db()
+    cursor = await db.execute(
+        "SELECT question, answer FROM dialog_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (user_id, limit),
+    )
+    rows = await cursor.fetchall()
+    result = []
+    for r in rows:
+        result.append({"question": r["question"], "answer": r["answer"]})
+    result.reverse()
+    return result

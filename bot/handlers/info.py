@@ -52,7 +52,7 @@ async def cb_info_mode(cb: CallbackQuery, state: FSMContext):
 
     # сессия инфо-режима: приветствие только на первом входе
     from bot.core.ai_engine import has_history
-    if not has_history(cb.from_user.id):
+    if not await has_history(cb.from_user.id):
         await _replace_card(
             cb.message,
             f"{t('info_header', lang)}\n\n{welcome}",
