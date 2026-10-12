@@ -1,0 +1,20 @@
+{
+  "888888895": {
+    "university": {
+      "clarify_case": {
+        "attempts": 2,
+        "total_score": 7,
+        "errors": [
+          {
+            "score": 3,
+            "attempt": 1
+          },
+          {
+            "score": 4,
+            "attempt": 2
+          }
+        ]
+      }
+    }
+  }
+}
