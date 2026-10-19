@@ -1,5 +1,6 @@
 ---
 scenario: cases
+source_url: https://hh.ru/article/31031
 tags: []
 ---
 
