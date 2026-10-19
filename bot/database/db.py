@@ -112,6 +112,25 @@ async def _create_tables(db):
     """)
 
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS exam_sessions (
+            exam_session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            scenario TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            total_cases INTEGER DEFAULT 0,
+            completed_cases INTEGER DEFAULT 0,
+            current_case INTEGER DEFAULT 0,
+            cases_data TEXT,
+            answers_data TEXT,
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_exam_sessions_user ON exam_sessions(user_id)")
+
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS dialog_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -232,6 +251,76 @@ async def create_session(uid, scenario, mode, cases_total=0):
     )
     await db.commit()
     return cursor.lastrowid
+
+
+async def create_exam_session(uid, scenario, mode, total_cases, cases_data):
+    # создать экзаменационную сессию в БД
+    db = await _get_db()
+    cursor = await db.execute(
+        """INSERT INTO exam_sessions
+        (user_id, scenario, mode, total_cases, cases_data, status)
+        VALUES (?, ?, ?, ?, ?, 'active')""",
+        (uid, scenario, mode, total_cases, cases_data),
+    )
+    await db.commit()
+    return cursor.lastrowid
+
+
+async def update_exam_session(exam_session_id, **kwargs):
+    # обновить поля экзаменационной сессии
+    if not kwargs:
+        return
+    db = await _get_db()
+    set_clause = ", ".join(f"{k} = ?" for k in kwargs)
+    kwargs["updated_at"] = "CURRENT_TIMESTAMP"
+    values = list(kwargs.values()) + [exam_session_id]
+    await db.execute(
+        f"UPDATE exam_sessions SET {set_clause} WHERE exam_session_id = ?",
+        values,
+    )
+    await db.commit()
+
+
+async def get_exam_session(exam_session_id):
+    # получить экзаменационную сессию по ID
+    db = await _get_db()
+    cursor = await db.execute(
+        "SELECT * FROM exam_sessions WHERE exam_session_id = ?",
+        (exam_session_id,),
+    )
+    return await cursor.fetchone()
+
+
+async def get_active_exam_session(uid):
+    # получить активную экзаменационную сессию пользователя
+    db = await _get_db()
+    cursor = await db.execute(
+        "SELECT * FROM exam_sessions WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+        (uid,),
+    )
+    return await cursor.fetchone()
+
+
+async def end_exam_session(exam_session_id, completed_cases, avg_score):
+    # завершить экзаменационную сессию
+    db = await _get_db()
+    await db.execute(
+        """UPDATE exam_sessions
+        SET status = 'completed', completed_cases = ?, avg_score = ?, ended_at = CURRENT_TIMESTAMP
+        WHERE exam_session_id = ?""",
+        (completed_cases, avg_score, exam_session_id),
+    )
+    await db.commit()
+
+
+async def abandon_exam_session(exam_session_id):
+    # бросить экзамен (статус abandoned)
+    db = await _get_db()
+    await db.execute(
+        "UPDATE exam_sessions SET status = 'abandoned', ended_at = CURRENT_TIMESTAMP WHERE exam_session_id = ?",
+        (exam_session_id,),
+    )
+    await db.commit()
 
 
 async def end_session(sid, cases_completed, avg_score):
@@ -367,7 +456,7 @@ async def get_global_stats():
 
 
 async def save_dialog(user_id: int, question: str, answer: str):
-    # сохранить диалог для памяти
+    # сохранить диалог для памяти (ограничено до 4 последних сообщений)
     db = await _get_db()
     await db.execute(
         "INSERT INTO dialog_history (user_id, question, answer) VALUES (?, ?, ?)",
