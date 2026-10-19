@@ -18,7 +18,7 @@ build/
 *.db-journal
 /database/
 
-# ffmpeg server binary (СЃРєР°С‡РёРІР°РµС‚СЃСЏ РїСЂРё РґРµРїР»РѕРµ РЅР° Render)
+# ffmpeg server binary (скачивался при деплое на Render — больше не нужен, ffmpeg приходит из pip)
 /bin/
 
 # Logs
@@ -27,7 +27,7 @@ build/
 # ChromaDB
 chroma_db/
 
-# OpenCode (AI assistant) вЂ” never commit, never push
+# OpenCode (AI assistant) — never commit, never push
 .opencode/
 
 # Superpowers SDD workspace
@@ -62,3 +62,6 @@ data/reports/
 fh_dump.txt
 pytest6.txt
 pytest*.txt
+
+# временные папки конвертации голоса (tempfile.mkdtemp рядом с проектом)
+tmp*/
