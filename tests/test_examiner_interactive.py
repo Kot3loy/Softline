@@ -11,7 +11,7 @@ def _choice(situation="s", question="q", options=None, correct=0):
         "type": "choice",
         "situation": situation,
         "question": question,
-        "options": options if options is not None else ["A", "B", "C", "D"],
+        "options": options if options is not None else ["Первый", "Второй", "Третий", "Четвёртый"],
         "correct": correct,
         "explanation": "e",
     }
@@ -39,6 +39,8 @@ def test_valid_choice_accepts_good_case():
         _choice(options=["A", "A", "B", "C"]),           # дубли
         _choice(options=["A", "B", "C", ""]),            # пустой вариант
         _choice(options=["A", "B", "C"]),                # не 4 варианта
+        _choice(options=["Вариант A", "Вариант B", "Вариант C", "Вариант D"]),  # заглушки
+        _choice(options=["A", "B", "C", "D"]),           # буквы вместо ответов
         _choice(correct=4),                              # индекс вне диапазона
         _choice(correct="0"),                            # индекс не число
         _choice(question=""),                            # нет вопроса
@@ -48,6 +50,32 @@ def test_valid_choice_accepts_good_case():
 )
 def test_valid_choice_rejects_broken_case(case):
     assert examiner._valid_choice(case) is False
+
+
+# --- вёрстка задания ---
+
+def test_render_case_puts_options_on_separate_lines():
+    case = _choice(
+        situation="Катя считает скидку",
+        question="Какой ценой воспользоваться?",
+        options=["420 рублей", "360 рублей", "240 рублей", "180 рублей"],
+    )
+    text = examiner._render_case(case, "📋 <b>Задание 2 из 3</b>", "ru")
+    lines = text.split("\n")
+
+    assert lines[0] == "📋 <b>Задание 2 из 3</b>"
+    assert "❓ <b>Какой ценой воспользоваться?</b>" in lines
+    # каждый вариант на своей строке, а не в ряд
+    assert "A) 420 рублей" in lines
+    assert "B) 360 рублей" in lines
+    assert "C) 240 рублей" in lines
+    assert "D) 180 рублей" in lines
+
+
+def test_render_case_open_has_no_lettered_options():
+    text = examiner._render_case(_open(situation="s", question="q"), "header", "ru")
+    assert "A)" not in text
+
 
 
 # --- каждый второй кейс — тест ---
@@ -126,7 +154,7 @@ async def test_valid_choice_from_retry_is_used(test_db, mock_callback):
 
         cases = examiner.exam_sessions[uid]["cases"]
         assert cases[1]["type"] == "choice"
-        assert cases[1]["options"] == ["A", "B", "C", "D"]
+        assert cases[1]["options"] == ["Первый", "Второй", "Третий", "Четвёртый"]
     finally:
         examiner.exam_sessions.pop(uid, None)
 

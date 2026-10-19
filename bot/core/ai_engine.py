@@ -8,6 +8,7 @@ import asyncio
 from gigachat import GigaChatAsyncClient
 from gigachat.models import ChatCompletionRequest, ChatMessage, ChatModelOptions
 from bot.config import config
+from bot.core.choice_options import normalize_choice_case
 from bot.core.rag import search
 from bot.database.db import save_dialog, get_dialog, clear_dialog_history
 
@@ -222,8 +223,8 @@ def _parse_text_response(text: str, case_type: str) -> dict:
             situation = line.split(":", 1)[1].strip()
         elif line.startswith("Вопрос:") or line.startswith("ВОПРОС:"):
             question = line.split(":", 1)[1].strip()
-        elif re.match(r'^[A-D]\.\s', line):
-            options.append(line[3:].strip())
+        elif re.match(r'^[A-D][\).]\s*', line):
+            options.append(re.sub(r'^[A-D][\).]\s*', '', line).strip())
         elif "правильный ответ" in line.lower():
             parts = line.split(":", 1)
             letter = parts[1].strip().upper() if len(parts) > 1 else ""
@@ -243,9 +244,14 @@ def _parse_text_response(text: str, case_type: str) -> dict:
     }
 
     if case_type == "choice":
-        result["options"] = options if len(options) == 4 else ["Вариант A", "Вариант B", "Вариант C", "Вариант D"]
+        result["options"] = options
         result["correct"] = correct
         result["explanation"] = hint
+        # варианты часто лежат внутри вопроса; заглушки не показываем — тогда это открытый вопрос
+        result = normalize_choice_case(result)
+        if result["type"] == "open":
+            result["good_answer_points"] = []
+            result["common_mistakes"] = []
     else:
         result["good_answer_points"] = []
         result["common_mistakes"] = []
@@ -345,6 +351,8 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             "ВАРИАНТЫ:\n"
             "- Ровно 4 штуки (A, B, C, D)\n"
             "- Один правильный, три — правдоподобные ловушки\n"
+            "- options — это сами ответы текстом («420 рублей», «Спросить у менеджера»), НЕ буквы и НЕ «Вариант A»\n"
+            "- Не перечисляй варианты внутри question — там только сам вопрос\n"
             "- Примерно одной длины\n"
             "- Без 'Все вышеперечисленное'\n\n"
             "НЕ ПОВТОРЯЙСЯ. Формат: короткая история + конкретный вопрос."
@@ -359,8 +367,8 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             '{\n'
             '  "type": "choice",\n'
             '  "situation": "Живая ситуация 1-2 предложения",\n'
-            '  "question": "Конкретный вопрос",\n'
-            '  "options": ["A", "B", "C", "D"],\n'
+            '  "question": "Конкретный вопрос без вариантов внутри",\n'
+            '  "options": ["420 рублей", "360 рублей", "240 рублей", "180 рублей"],\n'
             '  "correct": 0,\n'
             '  "hint": "Подсказка",\n'
             '  "explanation": "Почему этот ответ (1 предложение)"\n'
@@ -425,12 +433,11 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             if "type" not in parsed:
                 parsed["type"] = case_type
             if parsed["type"] == "choice":
-                if "options" not in parsed or not isinstance(parsed["options"], list):
-                    parsed["type"] = "open"
-                elif len(parsed["options"]) != 4:
-                    parsed["type"] = "open"
-                elif "correct" not in parsed:
-                    parsed["correct"] = 0
+                # восстанавливаем настоящие варианты (llm кладёт их в вопрос) — иначе открытый вопрос
+                parsed = normalize_choice_case(parsed)
+                if parsed["type"] == "open":
+                    parsed.setdefault("good_answer_points", [])
+                    parsed.setdefault("common_mistakes", [])
             return {**parsed, "scenario": scenario}
 
         logger.warning(f"generate_case: невалидный JSON (попытка {attempt + 1})")

@@ -126,14 +126,15 @@ async def test_answer_choice_marks_case_message(test_db, mock_callback):
         with patch.object(examiner, "record_error", lambda *a, **kw: None):
             await examiner.cb_answer_choice(mock_callback, AsyncMock())
 
-        # задание не удаляем — размечаем выбранный и верный вариант прямо в нём
+        # задание не удаляем сразу — размечаем выбранный и верный вариант прямо в нём,
+        # id оставляем, чтобы убрать задание при переходе дальше
         mock_callback.bot.delete_message.assert_not_awaited()
         assert mock_callback.message.edit_text.await_count == 1
         marked = mock_callback.message.edit_text.await_args.args[0]
         assert "✅ A" in marked
         assert "❌ C" in marked
         mock_callback.message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
-        assert examiner.exam_sessions[uid]["case_msg_id"] is None
+        assert examiner.exam_sessions[uid]["case_msg_id"] == 777
         # разбор с оценкой — отдельным сообщением
         assert mock_callback.message.answer.await_count == 1
     finally:
@@ -220,15 +221,246 @@ async def test_next_case_deletes_unanswered_task(test_db, mock_callback):
     try:
         await examiner.cb_next_case(mock_callback, AsyncMock())
 
-        mock_callback.bot.delete_message.assert_awaited_once_with(555, 888)
+        deleted = [c.args for c in mock_callback.bot.delete_message.await_args_list]
+        assert (555, 888) in deleted
         session = examiner.exam_sessions[uid]
         assert session["current"] == 1
         # новое задание получило свой id
         assert session["case_msg_id"] is not None
-        # разбор прошлого задания не удаляли
-        assert session["feedback_msg_id"] == 999
+        # разбор прошлого задания тоже убран — чат не засоряется
+        assert session["feedback_msg_id"] is None
     finally:
         examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_next_case_removes_previous_task_and_review(test_db, mock_callback):
+    # после ответа перешли дальше: убираем и задание с пометками, и карточку разбора
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+
+    uid = mock_callback.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 3)
+
+    case = {
+        "type": "choice",
+        "situation": "s",
+        "question": "q",
+        "options": ["Первый", "Второй", "Третий", "Четвёртый"],
+        "correct": 0,
+        "explanation": "e",
+    }
+    examiner.exam_sessions[uid] = {
+        "scenario": "job",
+        "cases": [case, case, case],
+        "current": 0,
+        "total": 3,
+        "session_id": session_id,
+        "answers": [],
+        "scores": [],
+        "timestamp": 9e9,
+        "chat_id": 555,
+        "case_msg_id": 888,
+        "feedback_msg_id": 999,
+    }
+    mock_callback.data = "next_case"
+
+    try:
+        await examiner.cb_next_case(mock_callback, AsyncMock())
+
+        deleted = [c.args for c in mock_callback.bot.delete_message.await_args_list]
+        assert (555, 888) in deleted
+        assert (555, 999) in deleted
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+def _exam_session(cases, session_id, current=0, total=None,
+                  case_msg_id=777, feedback_msg_id=None, answers=None, scores=None):
+    # компактная сессия экзамена для тестов
+    return {
+        "scenario": "job",
+        "cases": cases,
+        "current": current,
+        "total": total if total is not None else len(cases),
+        "session_id": session_id,
+        "answers": answers or [],
+        "scores": scores or [],
+        "timestamp": 9e9,
+        "chat_id": 555,
+        "case_msg_id": case_msg_id,
+        "feedback_msg_id": feedback_msg_id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_last_choice_answer_shows_review_before_report(test_db, mock_callback):
+    # последнее задание: сначала разбор ответа с кнопкой «Завершить», итог — по кнопке
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+    from bot.translations import t
+
+    uid = mock_callback.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 1)
+
+    case = {
+        "type": "choice",
+        "situation": "s",
+        "question": "q",
+        "options": ["Первый", "Второй", "Третий", "Четвёртый"],
+        "correct": 0,
+        "explanation": "e",
+    }
+    examiner.exam_sessions[uid] = _exam_session([case], session_id)
+    mock_callback.data = "answer_choice_0"
+
+    try:
+        with patch.object(examiner, "record_error", lambda *a, **kw: None):
+            await examiner.cb_answer_choice(mock_callback, AsyncMock())
+
+        mock_callback.message.answer.assert_awaited_once()
+        review = mock_callback.message.answer.await_args.args[0]
+        assert t("exam_score", "ru", n=10) in review
+        kb = mock_callback.message.answer.await_args.kwargs["reply_markup"]
+        assert kb.inline_keyboard[0][0].callback_data == "show_results"
+        # итог ещё не показан: сессия ждёт кнопку «Завершить»
+        assert uid in examiner.exam_sessions
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_show_results_finalizes_after_last_answer(test_db, mock_callback):
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+
+    uid = mock_callback.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 1)
+
+    case = {
+        "type": "choice",
+        "situation": "s",
+        "question": "q",
+        "options": ["Первый", "Второй", "Третий", "Четвёртый"],
+        "correct": 0,
+        "explanation": "e",
+    }
+    examiner.exam_sessions[uid] = _exam_session([case], session_id)
+    mock_callback.data = "answer_choice_0"
+
+    try:
+        with patch.object(examiner, "record_error", lambda *a, **kw: None):
+            await examiner.cb_answer_choice(mock_callback, AsyncMock())
+            mock_callback.message.answer.reset_mock()
+            await examiner.cb_show_results(mock_callback, AsyncMock())
+
+        assert uid not in examiner.exam_sessions
+        report = mock_callback.message.answer.await_args.args[0]
+        from bot.translations import t
+        assert t("exam_complete", "ru") in report
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_last_open_answer_shows_review_with_finish_button(test_db, mock_message):
+    # открытый вопрос: разбор последнего ответа не теряется
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+    from bot.translations import t
+
+    uid = mock_message.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 1)
+
+    case = {
+        "type": "open",
+        "situation": "s",
+        "question": "q",
+        "good_answer_points": [],
+        "common_mistakes": [],
+    }
+    examiner.exam_sessions[uid] = _exam_session([case], session_id)
+    mock_message.text = "мой ответ"
+
+    evaluation = {"score": 8, "feedback": "нормально", "strengths": [], "weaknesses": [], "sources": []}
+
+    try:
+        with patch.object(examiner, "evaluate_answer", AsyncMock(return_value=evaluation)), \
+                patch.object(examiner, "record_error", lambda *a, **kw: None):
+            await examiner.handle_exam_answer(mock_message, AsyncMock())
+
+        mock_message.answer.assert_awaited_once()
+        review = mock_message.answer.await_args.args[0]
+        assert t("exam_score", "ru", n=8) in review
+        kb = mock_message.answer.await_args.kwargs["reply_markup"]
+        assert kb.inline_keyboard[0][0].callback_data == "show_results"
+        assert uid in examiner.exam_sessions
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_second_answer_to_same_task_is_ignored(test_db, mock_message):
+    # ответ уже засчитан — второй текст не оцениваем повторно
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+
+    uid = mock_message.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 3)
+
+    case = {
+        "type": "open",
+        "situation": "s",
+        "question": "q",
+        "good_answer_points": [],
+        "common_mistakes": [],
+    }
+    examiner.exam_sessions[uid] = _exam_session(
+        [case, case, case], session_id,
+        answers=[{"case_idx": 0, "user_answer": "уже ответил", "evaluation": {"score": 7}}],
+        scores=[7],
+    )
+    mock_message.text = "ещё один ответ"
+
+    try:
+        with patch.object(examiner, "evaluate_answer", AsyncMock()) as evaluate:
+            await examiner.handle_exam_answer(mock_message, AsyncMock())
+
+        evaluate.assert_not_awaited()
+        assert examiner.exam_sessions[uid]["scores"] == [7]
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_about_screen_has_back_button(test_db, mock_callback):
+    # из «О боте» можно вернуться в меню
+    from bot.handlers.start import cb_settings_about
+
+    await cb_settings_about(mock_callback)
+
+    kb = mock_callback.message.answer.await_args.kwargs["reply_markup"]
+    assert kb is not None
+    assert kb.inline_keyboard[-1][0].callback_data == "back_to_menu"
+
+
+@pytest.mark.asyncio
+async def test_back_from_report_keeps_report_message(test_db, mock_callback):
+    # отчёт о завершении экзамена не удаляем: к нему и pdf можно вернуться в чате
+    from bot.handlers.start import cb_back_to_menu_keep
+
+    mock_callback.data = "back_to_menu_keep"
+    await cb_back_to_menu_keep(mock_callback, AsyncMock())
+
+    mock_callback.message.delete.assert_not_awaited()
+    mock_callback.message.answer.assert_awaited_once()
+    # кнопки со старого отчёта снимаем, чтобы не жали повторно
+    mock_callback.message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
 
 
 @pytest.mark.asyncio

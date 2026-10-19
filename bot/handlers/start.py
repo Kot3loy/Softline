@@ -9,7 +9,7 @@ from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.fsm.context import FSMContext
 
 from bot.translations import t
-from bot.utils.keyboards import main_menu_kb, scenario_info_kb, settings_kb, progress_kb
+from bot.utils.keyboards import main_menu_kb, scenario_info_kb, settings_kb, progress_kb, back_to_menu_kb
 from bot.utils.lang import get_lang, KNOWN_BUTTONS
 from bot.utils.voice import text_to_speech
 from bot.core.ai_engine import _sanitize_input
@@ -186,7 +186,7 @@ async def cb_settings_about(cb: CallbackQuery):
     # о боте
     user_data = await get_or_create_user(cb.from_user.id)
     lang = get_lang(user_data)
-    await _replace_card(cb.message, _about_text(lang), kb=None)
+    await _replace_card(cb.message, _about_text(lang), kb=back_to_menu_kb(lang))
     await cb.answer()
 
 
@@ -275,6 +275,28 @@ async def cb_back_to_menu(cb: CallbackQuery, state: FSMContext):
     await abandon_exam(cb.from_user.id)
 
     await _replace_card(cb.message, text, kb=None)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "back_to_menu_keep")
+async def cb_back_to_menu_keep(cb: CallbackQuery, state: FSMContext):
+    # выход в меню из отчёта экзамена: само сообщение с отчётом не удаляем,
+    # чтобы к разбору и pdf можно было вернуться в чате
+    user_data = await get_or_create_user(cb.from_user.id)
+    lang = get_lang(user_data)
+    text = f"{t('welcome_msg', lang)}\n\n{t('choose_scenario', lang)}"
+
+    await state.clear()
+    from bot.core.ai_engine import clear_history
+    await clear_history(cb.from_user.id)
+
+    # кнопки с отчёта снимаем, чтобы не нажали повторно
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception as e:
+        logger.debug(f"Не удалось убрать кнопки отчёта: {e}")
+
+    await _show_screen(cb.message, text)
     await cb.answer()
 
 

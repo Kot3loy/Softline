@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from bot.translations import t
+from bot.core.choice_options import LETTERS, clean_question, is_placeholder_options
 from bot.utils.keyboards import exam_cases_kb, case_answer_kb, choice_answer_kb
 from bot.utils.lang import get_lang
 from bot.core.ai_engine import generate_case, evaluate_answer, _strip_markdown
@@ -74,25 +75,80 @@ async def _drop_case(session: dict, bot):
     session["case_msg_id"] = None
 
 
+async def _drop_feedback(session: dict, bot):
+    # убрать карточку разбора прошлого задания, чтобы чат не засорялся
+    await _drop_message(bot, session.get("chat_id"), session.get("feedback_msg_id"))
+    session["feedback_msg_id"] = None
+
+
 def _choice_case_type(index: int) -> str:
     # каждый второй кейс — тест с вариантами: экзамен интерактивнее
     return "choice" if index % 2 == 1 else "open"
 
 
 def _valid_choice(case: dict) -> bool:
-    # llm иногда отдаёт 4 варианта с дублями или неверный индекс — такой тест не показываем
+    # llm иногда отдаёт 4 варианта с дублями, буквами-заглушками или неверный индекс
     if not isinstance(case, dict) or case.get("type") != "choice":
         return False
     options = case.get("options")
     if not isinstance(options, list) or len(options) != 4:
         return False
-    cleaned = [str(o).strip() for o in options]
-    if any(not o for o in cleaned) or len(set(cleaned)) != 4:
+    if is_placeholder_options(options):
         return False
     correct = case.get("correct")
     if isinstance(correct, bool) or not isinstance(correct, int) or not 0 <= correct < 4:
         return False
     return bool(str(case.get("question") or "").strip())
+
+
+def _render_case(case: dict, header: str, lang: str) -> str:
+    # задание для чата: шапка, ситуация, вопрос и варианты — каждый на своей строке
+    parts = [
+        header,
+        "",
+        html.escape(case.get("situation") or ""),
+        "",
+        t("exam_question", lang, text=html.escape(clean_question(case.get("question") or ""))),
+    ]
+    options = case.get("options") or []
+    if case.get("type") == "choice" and options and not is_placeholder_options(options):
+        parts.append("")
+        parts.extend(
+            f"{LETTERS[i]}) {html.escape(str(option))}" for i, option in enumerate(options[:4])
+        )
+    return "\n".join(parts)
+
+
+def _next_step_kb(lang: str, finished: bool) -> InlineKeyboardMarkup:
+    # на последнем задании ведём к итогам, иначе — к следующему
+    if finished:
+        button = InlineKeyboardButton(text=t("exam_finish", lang), callback_data="show_results")
+    else:
+        button = InlineKeyboardButton(text=t("exam_next", lang), callback_data="next_case")
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
+
+
+async def _send_case(session: dict, message, lang: str, case: dict, num: int):
+    # шлём задание: тест — кнопки-буквы, открытый вопрос — кнопка «дальше/завершить»
+    header = t("exam_task", lang, n=num, total=session["total"])
+    if case.get("type") == "choice":
+        kb = choice_answer_kb(case.get("options") or [])
+    else:
+        kb = case_answer_kb(num, session["total"], lang)
+    sent = await message.answer(_render_case(case, header, lang), reply_markup=kb, parse_mode="HTML")
+    session["case_msg_id"] = getattr(sent, "message_id", None)
+    return sent
+
+
+async def _send_review(session: dict, message, lang: str, text: str, finished: bool):
+    # разбор ответа; на последнем задании ждём кнопку «Завершить»
+    sent = await message.answer(
+        text,
+        reply_markup=_next_step_kb(lang, finished),
+        parse_mode="HTML",
+    )
+    session["feedback_msg_id"] = getattr(sent, "message_id", None)
+    return sent
 
 
 def _choice_marks(case: dict, chosen_idx: int) -> list[str]:
@@ -101,13 +157,28 @@ def _choice_marks(case: dict, chosen_idx: int) -> list[str]:
     correct_idx = case.get("correct", 0)
     marks = []
     for i, option in enumerate(options):
+        text = html.escape(str(option))
         if i == correct_idx:
-            marks.append(f"✅ {option}")
+            marks.append(f"✅ {text}")
         elif i == chosen_idx:
-            marks.append(f"❌ {option}")
+            marks.append(f"❌ {text}")
         else:
-            marks.append(f"▫️ {option}")
+            marks.append(f"▫️ {text}")
     return marks
+
+
+def _render_marked_case(case: dict, lang: str, chosen_idx: int) -> str:
+    # то же задание, но с пометками выбранного и верного варианта
+    parts = [
+        html.escape(case.get("situation") or ""),
+        "",
+        t("exam_question", lang, text=html.escape(clean_question(case.get("question") or ""))),
+        "",
+    ]
+    parts.extend(
+        f"{LETTERS[i]}) {mark}" for i, mark in enumerate(_choice_marks(case, chosen_idx))
+    )
+    return "\n".join(parts)
 
 
 async def _generate_case_for_index(scenario: str, index: int, weak_areas=None) -> dict:
@@ -174,7 +245,8 @@ async def _finalize_exam(user_id: int, session: dict, message, lang: str):
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=t("exam_export", lang), callback_data="export_pdf")],
-        [InlineKeyboardButton(text=t("btn_back", lang), callback_data="back_to_menu")],
+        # отчёт не должен исчезать: кнопка возврата шлёт меню новым сообщением
+        [InlineKeyboardButton(text=t("btn_back", lang), callback_data="back_to_menu_keep")],
     ])
 
     await message.answer(result_text, reply_markup=kb, parse_mode="HTML")
@@ -257,22 +329,7 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
     }
 
     case = cases[0]
-    task_header = t("exam_task", lang, n=1, total=count)
-    question_text = t("exam_question", lang, text=case['question'])
-
-    if case.get("type") == "choice":
-        sent = await cb.message.answer(
-            f"{task_header}\n\n{case['situation']}\n\n{question_text}",
-            reply_markup=choice_answer_kb(case.get("options", [])),
-            parse_mode="HTML",
-        )
-    else:
-        sent = await cb.message.answer(
-            f"{task_header}\n\n{case['situation']}\n\n{question_text}",
-            reply_markup=case_answer_kb(1, count, lang),
-            parse_mode="HTML",
-        )
-    exam_sessions[user_id]["case_msg_id"] = getattr(sent, "message_id", None)
+    await _send_case(exam_sessions[user_id], cb.message, lang, case, 1)
     await state.set_state(ExamState.waiting_for_answer)
 
 
@@ -296,26 +353,13 @@ async def cb_next_case(cb: CallbackQuery, state: FSMContext):
         return
     await cb.answer()
 
-    # если текущее задание так и осталось без ответа — убираем его из чата
+    # если текущее задание так и осталось без ответа — убираем его из чата,
+    # вместе с ним уходит карточка разбора прошлого задания
     await _drop_case(session, cb.bot)
+    await _drop_feedback(session, cb.bot)
 
     case = session["cases"][current_idx]
-    task_header = t("exam_task", lang, n=current_idx + 1, total=session['total'])
-    question_text = t("exam_question", lang, text=case['question'])
-
-    if case.get("type") == "choice":
-        sent = await cb.message.answer(
-            f"{task_header}\n\n{case['situation']}\n\n{question_text}",
-            reply_markup=choice_answer_kb(case.get("options", [])),
-            parse_mode="HTML",
-        )
-    else:
-        sent = await cb.message.answer(
-            f"{task_header}\n\n{case['situation']}\n\n{question_text}",
-            reply_markup=case_answer_kb(current_idx + 1, session["total"], lang),
-            parse_mode="HTML",
-        )
-    session["case_msg_id"] = getattr(sent, "message_id", None)
+    await _send_case(session, cb.message, lang, case, current_idx + 1)
     await state.set_state(ExamState.waiting_for_answer)
 
 
@@ -401,29 +445,17 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
     next_idx = current_idx + 1
     await cb.answer()
 
-    # задание не удаляем: помечаем варианты, чтобы юзер видел свой выбор и верный ответ
+    # задание помечаем: видно свой выбор и верный ответ; id оставляем,
+    # чтобы задание ушло из чата при переходе дальше
     if options:
-        marked_text = (
-            f"{case.get('situation', '')}\n\n"
-            f"{t('exam_question', lang, text=case.get('question', ''))}\n\n"
-            + "\n".join(_choice_marks(case, chosen_idx))
-        )
         try:
-            await cb.message.edit_text(marked_text, parse_mode="HTML")
+            await cb.message.edit_text(_render_marked_case(case, lang, chosen_idx), parse_mode="HTML")
             await cb.message.edit_reply_markup(reply_markup=None)
         except Exception as e:
             logger.debug(f"Не удалось разметить варианты: {e}")
-    session["case_msg_id"] = None
 
-    if next_idx >= session["total"]:
-        await _finalize_exam(user_id, session, cb.message, lang)
-        await state.clear()
-    else:
-        next_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=t("exam_next", lang), callback_data="next_case")]
-        ])
-        sent = await cb.message.answer(text, reply_markup=next_kb, parse_mode="HTML")
-        session["feedback_msg_id"] = getattr(sent, "message_id", None)
+    # на последнем задании сначала показываем разбор ответа, итог — по кнопке «Завершить»
+    await _send_review(session, cb.message, lang, text, finished=next_idx >= session["total"])
 
 
 @router.callback_query(F.data == "show_results")
@@ -479,6 +511,14 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
         return
 
     case = session["cases"][current_idx]
+
+    # повторный ответ на то же задание не оцениваем: он уже засчитан
+    if any(a.get("case_idx") == current_idx for a in session["answers"]):
+        await msg.answer(
+            t("exam_already_answered", lang),
+            reply_markup=_next_step_kb(lang, current_idx + 1 >= session["total"]),
+        )
+        return
 
     if case.get("type") == "choice":
         await msg.answer(t("exam_task_choice_text", lang))
@@ -574,12 +614,5 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
     # задание отработало — убираем текст задания, разбор остаётся
     await _drop_case(session, msg.bot)
 
-    if next_idx >= session["total"]:
-        await _finalize_exam(user_id, session, msg, lang)
-        await state.clear()
-    else:
-        next_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=t("exam_next", lang), callback_data="next_case")]
-        ])
-        sent = await msg.answer(text, reply_markup=next_kb, parse_mode="HTML")
-        session["feedback_msg_id"] = getattr(sent, "message_id", None)
+    # на последнем задании сначала разбор ответа, итог — по кнопке «Завершить»
+    await _send_review(session, msg, lang, text, finished=next_idx >= session["total"])

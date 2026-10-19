@@ -62,13 +62,12 @@ def exam_cases_kb(lang: str = "ru"):
 
 
 def case_answer_kb(case_num: int, total: int, lang: str = "ru"):
-    # кнопки "дальше" / "показать результат"
-    buttons = []
+    # кнопки "дальше" / "завершить"
     if case_num < total:
-        buttons.append([InlineKeyboardButton(text=t("exam_next", lang), callback_data="next_case")])
+        button = InlineKeyboardButton(text=t("exam_next", lang), callback_data="next_case")
     else:
-        buttons.append([InlineKeyboardButton(text=t("exam_results", lang), callback_data="show_results")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+        button = InlineKeyboardButton(text=t("exam_finish", lang), callback_data="show_results")
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
 
 def back_to_menu_kb(lang: str = "ru"):
@@ -81,15 +80,15 @@ def back_to_menu_kb(lang: str = "ru"):
 
 
 def choice_answer_kb(options: list):
-    # варианты ответа для тестовых заданий
+    # варианты показаны в тексте задания, поэтому кнопки короткие — буквы
     letters = ["A", "B", "C", "D"]
     if len(options) > 4:
         logger.warning(f"Больше 4 вариантов ({len(options)}), обрезаю до 4")
     buttons = []
-    for i, option in enumerate(options[:4]):
+    for i in range(min(len(options), 4)):
         buttons.append([
             InlineKeyboardButton(
-                text=f"{letters[i]}. {option}",
+                text=letters[i],
                 callback_data=f"answer_choice_{i}"
             )
         ])

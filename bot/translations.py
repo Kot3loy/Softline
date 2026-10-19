@@ -137,7 +137,11 @@ STRINGS = {
     "exam_avg": {"ru": "Средний балл: {n}/10", "en": "Average score: {n}/10"},
     "exam_recommendations": {"ru": "<b>Рекомендации:</b>", "en": "<b>Recommendations:</b>"},
     "exam_next": {"ru": "▶ Следующее задание", "en": "▶ Next task"},
-    "exam_results": {"ru": "📊 Результаты", "en": "📊 Results"},
+    "exam_finish": {"ru": "🏁 Завершить", "en": "🏁 Finish"},
+    "exam_already_answered": {
+        "ru": "Ответ на это задание уже засчитан. Нажми кнопку ниже.",
+        "en": "This task is already answered. Press the button below.",
+    },
     "exam_export": {"ru": "📥 Экспорт в PDF", "en": "📥 Export to PDF"},
     "exam_session_not_found": {"ru": "Сессия не найдена. Начни заново.", "en": "Session not found. Start over."},
     "exam_all_done": {"ru": "Все задания уже пройдены.", "en": "All tasks already completed."},

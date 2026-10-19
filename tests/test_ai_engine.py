@@ -56,19 +56,47 @@ def test_parse_text_response_choice():
     text = (
         "Ситуация: Катя на собеседовании.\n"
         "Вопрос: Что лучше?\n"
-        "A. Вариант A\n"
-        "B. Вариант B\n"
-        "C. Вариант C\n"
-        "D. Вариант D\n"
+        "A. Позвонить менеджеру\n"
+        "B. Написать письмо\n"
+        "C. Спросить коллегу\n"
+        "D. Подождать до утра\n"
         "Правильный ответ: B\n"
         "Объяснение: Потому что B"
     )
     result = _parse_text_response(text, "choice")
     assert result["situation"] == "Катя на собеседовании."
     assert result["question"] == "Что лучше?"
-    assert len(result["options"]) == 4
+    assert result["options"] == ["Позвонить менеджеру", "Написать письмо", "Спросить коллегу", "Подождать до утра"]
     assert result["correct"] == 1
     assert result["type"] == "choice"
+
+
+def test_parse_text_response_choice_without_real_options_becomes_open():
+    """Буквенные заглушки вместо ответов — это не тест, задаём обычный вопрос"""
+    text = (
+        "Ситуация: Катя на собеседовании.\n"
+        "Вопрос: Что лучше?\n"
+        "A. Вариант A\n"
+        "B. Вариант B\n"
+        "C. Вариант C\n"
+        "D. Вариант D\n"
+        "Правильный ответ: B"
+    )
+    result = _parse_text_response(text, "choice")
+    assert result["type"] == "open"
+
+
+def test_parse_text_response_choice_pulls_options_out_of_question():
+    """Варианты перечислены в строке вопроса — вытаскиваем их в options"""
+    text = (
+        "Ситуация: Катя считает скидку.\n"
+        "Вопрос: Какой ценой воспользоваться? A) 420 рублей; B) 360 рублей; C) 240 рублей; D) 180 рублей?\n"
+        "Правильный ответ: A"
+    )
+    result = _parse_text_response(text, "choice")
+    assert result["question"] == "Какой ценой воспользоваться?"
+    assert result["options"] == ["420 рублей", "360 рублей", "240 рублей", "180 рублей"]
+
 
 
 def test_parse_text_response_empty():

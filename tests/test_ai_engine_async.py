@@ -263,6 +263,70 @@ async def test_evaluate_answer_job_searches_companies_and_interviews(monkeypatch
     assert recorded["source_type"] == ("companies", "interviews")
 
 
+@pytest.mark.asyncio
+async def test_generate_case_choice_recovers_options_from_question(monkeypatch):
+    """LLM положила варианты в question, а в options — заглушки: берём настоящие"""
+    monkeypatch.setattr(ai_engine, "RETRY_DELAY", 0)
+    payload = json.dumps({
+        "type": "choice",
+        "situation": "Катя считает скидку",
+        "question": "Какой ценой воспользоваться? A) 420 рублей; B) 360 рублей; C) 240 рублей; D) 180 рублей?",
+        "options": ["Вариант A", "Вариант B", "Вариант C", "Вариант D"],
+        "correct": 0,
+        "explanation": "скидка 30%",
+    }, ensure_ascii=False)
+    monkeypatch.setattr(ai_engine, "ask_ai", AsyncMock(return_value=payload))
+
+    case = await ai_engine.generate_case("university", case_type="choice")
+
+    assert case["type"] == "choice"
+    assert case["question"] == "Какой ценой воспользоваться?"
+    assert case["options"] == ["420 рублей", "360 рублей", "240 рублей", "180 рублей"]
+
+
+@pytest.mark.asyncio
+async def test_generate_case_choice_with_placeholder_options_is_open(monkeypatch):
+    """Заглушки в options и никаких настоящих вариантов — отдаём открытый вопрос"""
+    monkeypatch.setattr(ai_engine, "RETRY_DELAY", 0)
+    payload = json.dumps({
+        "type": "choice",
+        "situation": "s",
+        "question": "Что делать?",
+        "options": ["Вариант A", "Вариант B", "Вариант C", "Вариант D"],
+        "correct": 0,
+    }, ensure_ascii=False)
+    monkeypatch.setattr(ai_engine, "ask_ai", AsyncMock(return_value=payload))
+
+    case = await ai_engine.generate_case("university", case_type="choice")
+
+    assert case["type"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_generate_case_choice_prompt_forbids_placeholders(monkeypatch):
+    """Промпт теста требует настоящие варианты и запрещает перечислять их в вопросе"""
+    monkeypatch.setattr(ai_engine, "RETRY_DELAY", 0)
+    seen = {}
+
+    async def fake_ask(prompt, system_prompt="", max_tokens=700, strip_md=False):
+        seen["system"] = system_prompt
+        seen["prompt"] = prompt
+        return json.dumps({
+            "type": "choice",
+            "situation": "s",
+            "question": "q",
+            "options": ["Один", "Два", "Три", "Четыре"],
+            "correct": 0,
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(ai_engine, "ask_ai", fake_ask)
+
+    await ai_engine.generate_case("university", case_type="choice")
+
+    assert "не перечисляй варианты" in seen["system"].lower()
+    assert '"options": ["A", "B", "C", "D"]' not in seen["prompt"]
+
+
 def test_registry_no_slang_examples_and_ban_line():
     """Реестр промптов: нет 'Норм. Ты как', есть запрет сленга"""
     import yaml

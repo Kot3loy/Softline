@@ -56,16 +56,18 @@ def test_case_answer_kb():
     kb = case_answer_kb(1, 5)
     assert kb is not None
     assert len(kb.inline_keyboard) == 1
+    assert kb.inline_keyboard[0][0].callback_data == "next_case"
 
-    # Последнее задание — только "Результаты"
+    # Последнее задание — кнопка "Завершить"
     kb = case_answer_kb(5, 5)
     assert kb is not None
     assert len(kb.inline_keyboard) == 1
+    assert kb.inline_keyboard[0][0].callback_data == "show_results"
 
 
 def test_choice_answer_kb():
-    """Тест клавиатуры выбора ответа (4 варианта A/B/C/D)"""
-    options = ["Вариант A", "Вариант B", "Вариант C", "Вариант D"]
+    """Тест клавиатуры выбора ответа: варианты показаны в тексте, кнопки — буквы"""
+    options = ["420 рублей", "360 рублей", "240 рублей", "180 рублей"]
     kb = choice_answer_kb(options)
     assert kb is not None
     assert len(kb.inline_keyboard) == 4  # 4 кнопки
@@ -74,9 +76,5 @@ def test_choice_answer_kb():
     for i, row in enumerate(kb.inline_keyboard):
         assert row[0].callback_data == f"answer_choice_{i}"
 
-    # Проверяем что буквы A/B/C/D в тексте
-    texts = [row[0].text for row in kb.inline_keyboard]
-    assert texts[0].startswith("A.")
-    assert texts[1].startswith("B.")
-    assert texts[2].startswith("C.")
-    assert texts[3].startswith("D.")
+    # Кнопки короткие — сами варианты уже есть в тексте задания
+    assert [row[0].text for row in kb.inline_keyboard] == ["A", "B", "C", "D"]
