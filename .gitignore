@@ -18,7 +18,7 @@ build/
 *.db-journal
 /database/
 
-# ffmpeg server binary (скачивается при деплое на Render)
+# ffmpeg server binary (СЃРєР°С‡РёРІР°РµС‚СЃСЏ РїСЂРё РґРµРїР»РѕРµ РЅР° Render)
 /bin/
 
 # Logs
@@ -27,7 +27,7 @@ build/
 # ChromaDB
 chroma_db/
 
-# OpenCode (AI assistant) — never commit, never push
+# OpenCode (AI assistant) вЂ” never commit, never push
 .opencode/
 
 # Superpowers SDD workspace
@@ -50,11 +50,15 @@ Thumbs.db
 data/learning_errors_archive.json
 data/learning_errors.json
 data/reports/
-# pytest �������� ���������
+# pytest тестовые артефакты
 .pytest_tmp/
 
-# ��������� ������ ������ (�� ��� ����)
+# локальные скиллы агента (не для репо)
 .agents/
 .opencode/
 .superpowers/
 .claude/
+.pytest_tmp2/
+fh_dump.txt
+pytest6.txt
+pytest*.txt
