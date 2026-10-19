@@ -23,32 +23,50 @@ if not _VOICE_AVAILABLE:
     _log.warning("Voice features disabled: pydub not available (audioop missing in Python 3.14+)")
 
 # Настройка ffmpeg, если голосовые функции активны
+
+
+def _resolve_ffmpeg() -> str | None:
+    # 1) imageio-ffmpeg — бинарник лежит внутри pip-колеса, скачивать из интернета не нужно
+    try:
+        import imageio_ffmpeg
+        path = imageio_ffmpeg.get_ffmpeg_exe()
+        if path and os.path.exists(path):
+            return path
+    except Exception:
+        pass
+
+    # 2) системный ffmpeg
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+
+    # 3) частые места, куда его кладут руками (в том числе bin/ из старой сборки)
+    for directory in [r"C:\ffmpeg\bin", r"C:\Program Files\ffmpeg\bin", "/usr/bin", "/usr/local/bin",
+                      os.path.join(os.getcwd(), "bin")]:
+        candidate = os.path.join(directory, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 if _VOICE_AVAILABLE:
-    _ffmpeg_path = shutil.which("ffmpeg")
-    _ffprobe_path = shutil.which("ffprobe")
-
-    if not _ffmpeg_path:
-        for p in [r"C:\ffmpeg\bin", r"C:\Program Files\ffmpeg\bin", "/usr/bin", "/usr/local/bin",
-                  os.path.join(os.getcwd(), "bin")]:
-            if os.path.exists(os.path.join(p, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")):
-                _ffmpeg_path = os.path.join(p, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
-                break
-
-    if not _ffprobe_path and _ffmpeg_path:
-        _ffprobe_path = os.path.join(
-            os.path.dirname(_ffmpeg_path),
-            "ffprobe.exe" if os.name == "nt" else "ffprobe"
-        )
-        if not os.path.exists(_ffprobe_path):
-            _ffprobe_path = None
+    _ffmpeg_path = _resolve_ffmpeg()
+    _ffprobe_path = None
 
     if _ffmpeg_path:
         AudioSegment.converter = _ffmpeg_path
         _log.info(f"ffmpeg: {_ffmpeg_path}")
-    if _ffprobe_path:
-        AudioSegment.probe = _ffprobe_path
-        _log.info(f"ffprobe: {_ffprobe_path}")
-    if not _ffmpeg_path:
+
+        # ffprobe нужен pydub только для метаданных — берём, если лежит рядом
+        probe = os.path.join(
+            os.path.dirname(_ffmpeg_path),
+            "ffprobe.exe" if os.name == "nt" else "ffprobe",
+        )
+        if os.path.exists(probe):
+            _ffprobe_path = probe
+            AudioSegment.probe = probe
+            _log.info(f"ffprobe: {probe}")
+    else:
         _log.warning("ffmpeg не найден — голосовые сообщения не будут работать")
 else:
     _ffmpeg_path = None

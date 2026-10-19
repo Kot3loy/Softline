@@ -73,7 +73,7 @@ bot/
 - Синтез речи — edge-tts, нейронные голоса Microsoft для ru-RU
 - PDF — fpdf2, шрифт DejaVu
 - Промпты — реестр в yaml с версиями, чтобы можно было откатить формулировки
-- Тесты — 331 автотест на pytest (все проходят), ruff без замечаний
+- Тесты — 335 автотестов на pytest (все проходят), ruff без замечаний
 
 ---
 
@@ -113,6 +113,8 @@ pip install -r requirements.txt
 # создать .env по образцу .env.example, заполнить BOT_TOKEN и GIGACHAT_CREDENTIALS
 python main.py
 ```
+
+Отдельно ставить ffmpeg не нужно: бинарник приходит вместе с pip-пакетом `imageio-ffmpeg` и используется для конвертации голосовых.
 
 Запуск тестов: `.venv\Scripts\python.exe -m pytest tests/ -q`
 

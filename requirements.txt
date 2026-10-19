@@ -13,6 +13,8 @@ edge-tts==7.2.8
 pydub==0.25.1
 SpeechRecognition==3.17.0
 gTTS==2.5.4
+# ffmpeg для конвертации ogg→wav: бинарник лежит внутри колеса, ничего скачивать в сборке не нужно
+imageio-ffmpeg==0.6.0
 
 # PDF
 fpdf2==2.8.8
