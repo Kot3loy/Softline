@@ -30,6 +30,17 @@ def test_extract_title_falls_back_to_filename(tmp_path):
     assert rag._extract_title("без заголовка", md) == "some file"
 
 
+def test_rag_source_metadata_is_relative_path():
+    # абсолютный путь содержал бы имя пользователя ПК — храним относительный
+    rag._documents = []
+    docs = rag.search("как выбрать вуз", 3)
+    assert docs
+    for doc in docs:
+        source = doc.metadata.get("source", "")
+        assert not source.startswith(("C:", "/", "\\\\"))
+        assert "Users" not in source
+
+
 # --- форматирование источников ---
 
 def test_format_sources_human_readable_without_paths():

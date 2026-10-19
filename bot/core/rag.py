@@ -68,10 +68,15 @@ def _load_documents() -> list:
                 
                 chunks = _split_text(content, chunk_size=1000, overlap=200)
                 title = _extract_title(content, md_file)
+                # путь храним относительный: абсолютный содержит имя пользователя ПК
+                try:
+                    rel_source = str(md_file.relative_to(data_dir))
+                except ValueError:
+                    rel_source = md_file.name
                 for chunk in chunks:
                     _documents.append({
                         "content": chunk,
-                        "source": str(md_file),
+                        "source": rel_source,
                         "title": title,
                         "source_type": subdir,
                         "source_url": source_url,

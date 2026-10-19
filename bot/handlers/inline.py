@@ -86,7 +86,9 @@ async def inline_query_handler(inline_query: InlineQuery):
     results = []
     for i, doc in enumerate(docs):
         raw_source = str(doc.metadata.get("source", "Источник"))
-        source = Path(raw_source).name
+        # человеческое название источника вместо имени файла на диске
+        source = (doc.metadata.get("title") or "").strip() or Path(raw_source).stem.replace("_", " ")
+        source_url = (doc.metadata.get("source_url") or "").strip()
         content = doc.page_content[:200]
 
         # Определяем тип контента
@@ -100,13 +102,16 @@ async def inline_query_handler(inline_query: InlineQuery):
             emoji = "📄"
 
         # результат сразу несёт текст статьи — кнопка не нужна
+        body = f"{emoji} <b>{html.escape(source)}</b>\n\n{html.escape(content)}..."
+        if source_url:
+            body += f'\n\n<a href="{html.escape(source_url, quote=True)}">Открыть источник</a>'
         results.append(
             InlineQueryResultArticle(
                 id=f"doc_{i}",
                 title=f"{emoji} {_truncate(source, 40)}",
                 description=_truncate(content, 100),
                 input_message_content=InputTextMessageContent(
-                    message_text=f"{emoji} <b>{html.escape(source)}</b>\n\n{html.escape(content)}...",
+                    message_text=body,
                     parse_mode="HTML"
                 ),
             )
