@@ -4,6 +4,8 @@
 
 import logging
 import asyncio
+import html
+from urllib.parse import urlparse
 from bot.translations import t
 from bot.core.ai_engine import ask_ai, get_history, save_turn
 from bot.core.rag import search
@@ -18,6 +20,48 @@ _SCENARIO_TOPICS = {
     "adaptation": "адаптация на новой работе, коллеги, рабочий этикет",
     "lead": "лидерство, управление командой, принятие решений, стратегическое мышление",
 }
+
+# какие разделы базы знаний релевантны каждому сценарию
+_SCENARIO_SOURCE_TYPES = {
+    "university": ["universities", "interviews"],
+    "job": ["companies", "interviews"],
+    "adaptation": ["companies", "interviews"],
+    "lead": ["lead"],
+}
+
+# маркеры «вопрос не по моей теме» — источники к такому ответу не клеим
+_REFUSAL_MARKERS = (
+    "не моя специализация", "помогаю только", "не могу помочь",
+    "не по теме", "только с выбором вуза", "задай вопрос про",
+)
+
+
+def _is_refusal(answer: str) -> bool:
+    low = (answer or "").lower()
+    return any(marker in low for marker in _REFUSAL_MARKERS)
+
+
+def _format_sources(docs: list, lang: str) -> str:
+    # «📚 Источники» с человеческими названиями и ссылками — без путей к файлам
+    links = []
+    seen = set()
+    for doc in docs:
+        url = (doc.metadata.get("source_url") or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        title = (doc.metadata.get("title") or "").strip() or "Материал"
+        domain = urlparse(url).netloc.replace("www.", "")
+        line = f'• <a href="{html.escape(url, quote=True)}">{html.escape(title)}</a>'
+        if domain:
+            line += f" — {domain}"
+        links.append(line)
+        if len(links) >= 3:
+            break
+
+    if not links:
+        return ""
+    return "\n\n" + t("info_sources", lang) + "\n" + "\n".join(links)
 
 # Алиасы обратной совместимости
 SYSTEM_PROMPTS = {}
@@ -45,14 +89,15 @@ async def _get_system_prompts():
 
 async def answer_info_question(question: str, scenario: str, user_id: int = None, lang: str = "ru") -> str:
     # отвечаем на вопрос: ищем в базе знания, склеиваем контекст, просим ai
-    docs = await asyncio.to_thread(search, question, 3, None)
+    allowed_types = _SCENARIO_SOURCE_TYPES.get(scenario)
+    docs = await asyncio.to_thread(search, question, 3, allowed_types)
 
     # из найденного делаем контекст
     context = ""
     if docs:
         context = t("rag_relevant_info", lang) + "\n\n"
         for i, doc in enumerate(docs, 1):
-            source = doc.metadata.get("source", "Неизвестно")
+            source = doc.metadata.get("title") or "Материал"
             content = doc.page_content[:1000]
             context += f"{i}. Источник: {source}\n{content}\n\n"
 
@@ -101,16 +146,9 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
     if user_id:
         await save_turn(user_id, question, answer)
 
-    # реальные ссылки на источники — по ТЗ юзер видит откуда факты
-    source_links = []
-    for doc in docs:
-        url = doc.metadata.get("source_url")
-        name = doc.metadata.get("source", "")
-        if url:
-            short = name.replace("data/", "").replace(".md", "")
-            source_links.append(f"• {short}: {url}")
-    if source_links and context:
-        answer += "\n\n" + t("info_sources", lang) + "\n" + "\n".join(source_links[:3])
+    # ссылки на источники — только для содержательного ответа, не для отказов
+    if docs and len(answer) >= 80 and not _is_refusal(answer):
+        answer += _format_sources(docs, lang)
 
     return answer
 

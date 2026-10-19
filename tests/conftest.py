@@ -108,9 +108,11 @@ async def test_db():
             user_id INTEGER NOT NULL,
             case_id TEXT NOT NULL,
             scenario TEXT NOT NULL,
+            question TEXT,
             user_answer TEXT,
             score INTEGER,
             feedback TEXT,
+            sources TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id),
             FOREIGN KEY (user_id) REFERENCES users(user_id)

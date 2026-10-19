@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 DB_PATH = config.DATABASE_DIR / config.DATABASE_NAME
 _db = None
 _db_lock = asyncio.Lock()
-_DB_VERSION = 4
+_DB_VERSION = 5
 
 
 async def _get_db():
@@ -149,9 +149,11 @@ async def _create_tables(db):
             user_id INTEGER NOT NULL,
             case_id TEXT NOT NULL,
             scenario TEXT NOT NULL,
+            question TEXT,
             user_answer TEXT,
             score INTEGER,
             feedback TEXT,
+            sources TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id),
             FOREIGN KEY (user_id) REFERENCES users(user_id)
@@ -176,6 +178,15 @@ async def _migrate(db, from_version):
             logger.info("Миграция v3→v4: добавлена таблица dialog_history")
         except Exception as e:
             logger.warning(f"Миграция dialog_history не удалась: {e}")
+
+    if from_version < 5:
+        # v5: в ответах кейсов храним текст задания и источники — PDF становится диалогом
+        for column, coltype in (("question", "TEXT"), ("sources", "TEXT")):
+            try:
+                await db.execute(f"ALTER TABLE case_answers ADD COLUMN {column} {coltype}")
+                logger.info(f"Миграция v4→v5: добавлено поле {column}")
+            except Exception:
+                pass
 
     if from_version < 3:
         try:
@@ -333,14 +344,17 @@ async def end_session(sid, cases_completed, avg_score):
     await db.commit()
 
 
-async def save_case_answer(session_id, user_id, case_id, scenario, user_answer, score, feedback):
-    # сохранить ответ на кейс
+async def save_case_answer(session_id, user_id, case_id, scenario, user_answer, score, feedback, question=None, sources=None):
+    # сохранить ответ на кейс (question и sources — чтобы PDF был диалогом)
     db = await _get_db()
+    if isinstance(sources, (list, tuple)):
+        import json as _json
+        sources = _json.dumps(list(sources), ensure_ascii=False) if sources else None
     await db.execute(
         """INSERT INTO case_answers
-        (session_id, user_id, case_id, scenario, user_answer, score, feedback)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (session_id, user_id, case_id, scenario, user_answer, score, feedback),
+        (session_id, user_id, case_id, scenario, question, user_answer, score, feedback, sources)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (session_id, user_id, case_id, scenario, question, user_answer, score, feedback, sources),
     )
     await db.commit()
 

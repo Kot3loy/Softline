@@ -24,7 +24,7 @@ async def test_answer_info_question_with_context(test_db):
         )
 
     assert result == "Ответ, основанный на контексте"
-    search_mock.assert_called_once_with("какой проходной в МГУ?", 3, None)
+    search_mock.assert_called_once_with("какой проходной в МГУ?", 3, ["universities", "interviews"])
     assert ai_mock.await_count == 1
 
     prompt = ai_mock.await_args.args[0]
@@ -47,7 +47,7 @@ async def test_answer_info_question_no_context(test_db):
         )
 
     assert result == "Ответ без базы знаний"
-    search_mock.assert_called_once_with("абракадабра запрос", 3, None)
+    search_mock.assert_called_once_with("абракадабра запрос", 3, ["companies", "interviews"])
 
     prompt = ai_mock.await_args.args[0]
     assert t("rag_no_context", "en") in prompt

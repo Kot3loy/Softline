@@ -490,6 +490,7 @@ def _vague_answer_feedback() -> dict:
         "recommendations": [],
         "example_answer": "",
         "source": "",
+        "sources": [],
     }
 
 
@@ -520,13 +521,25 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
         # внутри всё в русском, перевод ответа уже в хендлере
         context = "Найденная релевантная информация:\n\n"
         for i, doc in enumerate(rag_docs, 1):
-            src = doc.metadata.get("source", "Неизвестно")
+            src = doc.metadata.get("title") or "Материал"
             src_url = doc.metadata.get("source_url")
             content = doc.page_content[:800]
             if src_url:
                 context += f"{i}. Источник: {src}\nURL: {src_url}\n{content}\n\n"
             else:
                 context += f"{i}. Источник: {src}\n{content}\n\n"
+
+    # реальные ссылки на источники — юзеру отдаём проверяемые URL, а не текст LLM
+    real_sources = []
+    seen_urls = set()
+    for doc in rag_docs:
+        url = (doc.metadata.get("source_url") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        real_sources.append({"title": doc.metadata.get("title") or "Материал", "url": url})
+        if len(real_sources) >= 3:
+            break
 
     system = (
         "Ты — практикующий наставник, оцениваешь ответ на задание. "
@@ -604,6 +617,7 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
             parsed.setdefault("recommendations", [])
             parsed.setdefault("example_answer", "")
             parsed.setdefault("source", "")
+            parsed["sources"] = real_sources
             # Успешно получили валидный ответ
             if "feedback" in parsed and isinstance(parsed["feedback"], str):
                 parsed["feedback"] = parsed["feedback"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -628,4 +642,5 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
         "recommendations": [],
         "example_answer": "",
         "source": "",
+        "sources": real_sources,
     }

@@ -148,7 +148,7 @@ STRINGS = {
     },
     "exam_typical_errors": {"ru": "🔍 <b>Типичные ошибки:</b>", "en": "🔍 <b>Typical mistakes:</b>"},
     "exam_advice": {"ru": "💡 Совет: {text}", "en": "💡 Advice: {text}"},
-    "info_sources": {"ru": "📚 Источники:", "en": "📚 Sources:"},
+    "info_sources": {"ru": "📚 <b>Источники</b>", "en": "📚 <b>Sources</b>"},
     "exam_strengths": {"ru": "✅ <b>Что сделано верно:</b>", "en": "✅ <b>What was done right:</b>"},
     "exam_weaknesses": {"ru": "⚠️ <b>Что можно улучшить:</b>", "en": "⚠️ <b>What can be improved:</b>"},
     "exam_example": {"ru": "💡 <b>Пример удачного ответа:</b>\n{text}", "en": "💡 <b>Example good answer:</b>\n{text}"},

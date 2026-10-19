@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from pathlib import Path
@@ -144,6 +145,12 @@ def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
             pdf.cell(0, 7, f"{task_label} {number} ({case_id}): {score}/10")
             pdf.ln(7)
             pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "", 10)
+            # текст задания — чтобы отчёт читался как диалог
+            question_text = (answer.get("question") or "").strip()
+            if question_text:
+                q_label = "Task:" if lang == "en" else "Задание:"
+                pdf.multi_cell(0, 6, f"{q_label} {question_text[:600]}")
+                pdf.ln(1)
             # ответ юзера — чтобы PDF был диалогом, а не только баллами
             user_answer_text = (answer.get("user_answer") or "").strip()
             if user_answer_text:
@@ -182,8 +189,28 @@ def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
                 "4. Задавай вопросы в информационном режиме"
             )
 
-    # Источники
-    if lang == "en":
+    # Источники: сначала реальные ссылки из ответов, если их нет — общий список
+    collected_sources = []
+    seen_sources = set()
+    for answer in (case_answers or []):
+        raw = answer.get("sources")
+        if not raw:
+            continue
+        try:
+            items = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            continue
+        for item in items or []:
+            url = (item or {}).get("url")
+            if not url or url in seen_sources:
+                continue
+            seen_sources.add(url)
+            collected_sources.append(f"• {(item.get('title') or url).strip()} — {url}")
+
+    if collected_sources:
+        header = "\nSources:" if lang == "en" else "\nИсточники:"
+        pdf.chapter_body(header + "\n" + "\n".join(collected_sources))
+    elif lang == "en":
         pdf.chapter_body(
             "\nSources:\n"
             "- Official university and company websites\n"

@@ -20,6 +20,15 @@ _doc_freq: dict[str, int] = {}
 _total_docs: int = 0
 
 
+def _extract_title(content: str, md_file) -> str:
+    # человеческое название источника: первый заголовок, иначе имя файла
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()[:120]
+    return md_file.stem.replace("_", " ").strip()
+
+
 def _load_documents() -> list:
     # читаю все md-файлы из папки data и режу на куски по ~1000 символов
     global _documents, _doc_freq, _total_docs
@@ -58,10 +67,12 @@ def _load_documents() -> list:
                             pass
                 
                 chunks = _split_text(content, chunk_size=1000, overlap=200)
+                title = _extract_title(content, md_file)
                 for chunk in chunks:
                     _documents.append({
                         "content": chunk,
                         "source": str(md_file),
+                        "title": title,
                         "source_type": subdir,
                         "source_url": source_url,
                     })
@@ -180,7 +191,12 @@ def search(query: str, k: int = 5, source_type: str | list | tuple | set | None 
 
     results = []
     for s, doc in scored[:k]:
-        results.append(SearchResult(doc["content"], {"source": doc["source"], "source_type": doc["source_type"], "source_url": doc.get("source_url")}))
+        results.append(SearchResult(doc["content"], {
+            "source": doc["source"],
+            "title": doc.get("title", ""),
+            "source_type": doc["source_type"],
+            "source_url": doc.get("source_url"),
+        }))
 
     return results
 

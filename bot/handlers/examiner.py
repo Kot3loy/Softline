@@ -2,6 +2,7 @@
 
 import time
 import asyncio
+import html
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -335,6 +336,7 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
         f"[Выбор: {options[chosen_idx] if chosen_idx < len(options) else '?'}]",
         score,
         feedback,
+        question=case.get("question") or case.get("situation") or "",
     )
 
     answered = len(session["scores"])
@@ -460,6 +462,8 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
         msg.text,
         score,
         feedback,
+        question=case.get("question") or case.get("situation") or "",
+        sources=evaluation.get("sources") or [],
     )
 
     text = f"{t('exam_score', lang, n=score)}\n\n{feedback}\n\n"
@@ -484,6 +488,14 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
     source = evaluation.get("source", "")
     if source:
         text += f"\n{t('exam_source', lang, text=source)}\n"
+
+    # реальные ссылки из базы знаний (не свободный текст LLM)
+    for src in (evaluation.get("sources") or [])[:2]:
+        url = (src or {}).get("url")
+        if not url:
+            continue
+        title = html.escape((src.get("title") or "Материал").strip())
+        text += f"{t('exam_source', lang, text=f'<a href=\"{html.escape(url, quote=True)}\">{title}</a>')}\n"
 
     # Дисклеймер — рекомендации носят информационный характер
     text += f"\n\n{t('disclaimer', lang)}"
