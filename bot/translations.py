@@ -128,6 +128,7 @@ STRINGS = {
     "exam_cases_5": {"ru": "5 заданий", "en": "5 tasks"},
     "exam_cases_10": {"ru": "10 заданий", "en": "10 tasks"},
     "exam_start": {"ru": "🎯 Начинаем! Генерирую {n} заданий...", "en": "🎯 Starting! Generating {n} tasks..."},
+    "exam_loading": {"ru": "⏳ Подбираю задания…", "en": "⏳ Picking tasks…"},
     "exam_task": {"ru": "📋 <b>Задание {n} из {total}</b>", "en": "📋 <b>Task {n} of {total}</b>"},
     "exam_question": {"ru": "❓ <b>{text}</b>", "en": "❓ <b>{text}</b>"},
     "exam_score": {"ru": "📊 <b>Оценка: {n}/10</b>", "en": "📊 <b>Score: {n}/10</b>"},

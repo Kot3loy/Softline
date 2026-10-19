@@ -22,6 +22,10 @@ class Config:
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     LOG_FILE = BASE_DIR / os.getenv("LOG_FILE", "bot.log")
 
+    # стикер-индикатор загрузки: пак и эмодзи стикера внутри пака
+    LOADING_STICKER_PACK = os.getenv("LOADING_STICKER_PACK", "")
+    LOADING_STICKER_EMOJI = os.getenv("LOADING_STICKER_EMOJI", "😐")
+
     DATA_DIR = BASE_DIR / "data"
     UNIVERSITIES_DIR = DATA_DIR / "universities"
     COMPANIES_DIR = DATA_DIR / "companies"

@@ -17,6 +17,7 @@ from bot.core.adaptive import record_error, get_weak_areas, get_recommendations,
 from bot.core.common_mistakes import find_mistakes
 from bot.database.db import create_session, end_session, save_case_answer, update_user, get_or_create_user
 from bot.handlers.start import _replace_card
+from bot.utils.loading import LoadingIndicator
 
 logger = logging.getLogger(__name__)
 
@@ -229,15 +230,17 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
     weak_areas = get_weak_areas(user_id, scenario)
 
     cases = []
-    for i in range(count):
-        case = await _generate_case_for_index(scenario, i, weak_areas if i == 0 else None)
-        # Переводим кейс если нужно
-        if lang != "ru":
-            case = dict(case)
-            for key in ("situation", "question", "hint"):
-                if key in case and case[key]:
-                    case[key] = await _translate_if_needed(case[key], lang)
-        cases.append(case)
+    # пока ai подбирает задания — показываем стикер-индикатор, потом убираем
+    async with LoadingIndicator(cb.bot, cb.message.chat.id, fallback_text=t("exam_loading", lang)):
+        for i in range(count):
+            case = await _generate_case_for_index(scenario, i, weak_areas if i == 0 else None)
+            # Переводим кейс если нужно
+            if lang != "ru":
+                case = dict(case)
+                for key in ("situation", "question", "hint"):
+                    if key in case and case[key]:
+                        case[key] = await _translate_if_needed(case[key], lang)
+            cases.append(case)
 
     exam_sessions[user_id] = {
         "scenario": scenario,
