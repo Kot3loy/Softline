@@ -55,13 +55,8 @@ data/reports/
 
 # локальные скиллы агента (не для репо)
 .agents/
-.opencode/
-.superpowers/
 .claude/
 .pytest_tmp2/
-fh_dump.txt
-pytest6.txt
-pytest*.txt
 
 # временные папки конвертации голоса (tempfile.mkdtemp рядом с проектом)
 tmp*/
