@@ -101,6 +101,17 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
     if user_id:
         await save_turn(user_id, question, answer)
 
+    # реальные ссылки на источники — по ТЗ юзер видит откуда факты
+    source_links = []
+    for doc in docs:
+        url = doc.metadata.get("source_url")
+        name = doc.metadata.get("source", "")
+        if url:
+            short = name.replace("data/", "").replace(".md", "")
+            source_links.append(f"• {short}: {url}")
+    if source_links and context:
+        answer += "\n\n" + t("info_sources", lang) + "\n" + "\n".join(source_links[:3])
+
     return answer
 
 

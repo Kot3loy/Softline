@@ -324,7 +324,8 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
     session["scores"].append(score)
 
     case_id = f"{session['scenario']}_{current_idx + 1}"
-    await asyncio.to_thread(record_error, user_id, case_id, session["scenario"], score)
+    topic = case.get("situation") or case.get("question") or ""
+    await asyncio.to_thread(record_error, user_id, case_id, session["scenario"], score, topic)
 
     await save_case_answer(
         session["session_id"],
@@ -385,6 +386,8 @@ async def _format_mistakes(mistakes: list, lang: str) -> str:
         advice = await _translate_if_needed(m["advice"], lang)
         block += f"  • {error}\n"
         block += f"    {t('exam_advice', lang, text=advice)}\n"
+        if m.get("source"):
+            block += f"    {t('exam_source', lang, text=m['source'])}\n"
     return block
 
 
@@ -446,7 +449,8 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
     session["scores"].append(score)
 
     case_id = f"{session['scenario']}_{current_idx + 1}"
-    await asyncio.to_thread(record_error, user_id, case_id, session["scenario"], score)
+    topic = case.get("situation") or case.get("question") or ""
+    await asyncio.to_thread(record_error, user_id, case_id, session["scenario"], score, topic)
 
     await save_case_answer(
         session["session_id"],

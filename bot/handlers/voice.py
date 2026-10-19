@@ -136,12 +136,15 @@ async def handle_voice(msg: Message, state: FSMContext):
             from bot.utils.translator import translate_text
             answer = await translate_text(answer, target_lang=lang)
 
+        from bot.handlers.info import _should_show_disclaimer
+        disclaimer = t("disclaimer", lang) if _should_show_disclaimer(answer) else ""
+
         voice_file = await text_to_speech(answer)
 
         if voice_file:
             try:
                 await msg.answer_voice(FSInputFile(voice_file))
-                sent = await msg.answer(t("voice_text_prefix", lang, text=answer), parse_mode="HTML")
+                sent = await msg.answer(t("voice_text_prefix", lang, text=answer) + disclaimer, parse_mode="HTML")
                 try:
                     from bot.handlers.start import _remember
                     _remember(msg.chat.id, getattr(sent, "message_id", None))
@@ -151,7 +154,7 @@ async def handle_voice(msg: Message, state: FSMContext):
                 if os.path.exists(voice_file):
                     os.remove(voice_file)
         else:
-            sent = await msg.answer(answer, parse_mode="HTML")
+            sent = await msg.answer(answer + disclaimer, parse_mode="HTML")
             try:
                 from bot.handlers.start import _remember
                 _remember(msg.chat.id, getattr(sent, "message_id", None))

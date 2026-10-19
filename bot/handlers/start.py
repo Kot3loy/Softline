@@ -166,6 +166,8 @@ async def cb_progress_reset(cb: CallbackQuery):
         _reset_confirm_users.discard(user_id)
         from bot.database.db import reset_progress
         await reset_progress(user_id)
+        from bot.core.adaptive import clear_user_errors
+        clear_user_errors(user_id)
         from bot.handlers.examiner import exam_sessions
         exam_sessions.pop(user_id, None)
         await cb.answer(t("reset_done", lang), show_alert=True)
@@ -326,18 +328,22 @@ async def fallback_handler(msg: Message):
         from bot.utils.translator import translate_text
         answer = await translate_text(answer, target_lang=lang)
 
+    # дисклеймер — как в инфо-режиме, только на содержательном ответе
+    from bot.handlers.info import _should_show_disclaimer
+    disclaimer = t("disclaimer", lang) if _should_show_disclaimer(answer) else ""
+
     if voice_enabled:
         voice_file = await text_to_speech(answer)
         try:
             if voice_file:
                 await msg.answer_voice(FSInputFile(voice_file))
-                sent = await msg.answer(t("voice_text_prefix", lang, text=answer), parse_mode="HTML")
+                sent = await msg.answer(t("voice_text_prefix", lang, text=answer) + disclaimer, parse_mode="HTML")
                 try:
                     _remember(msg.chat.id, getattr(sent, "message_id", None))
                 except Exception:
                     pass
             else:
-                sent = await msg.answer(answer, parse_mode="HTML")
+                sent = await msg.answer(answer + disclaimer, parse_mode="HTML")
                 try:
                     _remember(msg.chat.id, getattr(sent, "message_id", None))
                 except Exception:
@@ -346,7 +352,7 @@ async def fallback_handler(msg: Message):
             if voice_file and os.path.exists(voice_file):
                 os.remove(voice_file)
     else:
-        sent = await msg.answer(answer, parse_mode="HTML")
+        sent = await msg.answer(answer + disclaimer, parse_mode="HTML")
         try:
             _remember(msg.chat.id, getattr(sent, "message_id", None))
         except Exception:

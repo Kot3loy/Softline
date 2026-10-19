@@ -99,14 +99,7 @@ async def inline_query_handler(inline_query: InlineQuery):
         else:
             emoji = "📄"
 
-        # Создаем кнопку для перехода в инфо-режим
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="📖 " + (t("inline_open", lang) if "inline_open" in STRINGS else "Открыть"),
-                callback_data=f"info_from_inline_{i}"
-            )]
-        ])
-
+        # результат сразу несёт текст статьи — кнопка не нужна
         results.append(
             InlineQueryResultArticle(
                 id=f"doc_{i}",
@@ -116,14 +109,7 @@ async def inline_query_handler(inline_query: InlineQuery):
                     message_text=f"{emoji} <b>{html.escape(source)}</b>\n\n{html.escape(content)}...",
                     parse_mode="HTML"
                 ),
-                reply_markup=keyboard,
             )
         )
 
     await inline_query.answer(results, cache_time=60, is_personal=True)
-
-
-@router.callback_query(F.data.startswith("info_from_inline_"))
-async def cb_info_from_inline(cb):
-    # пока просто говорю что в разработке
-    await cb.answer("🚧 В разработке", show_alert=True)

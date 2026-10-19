@@ -43,7 +43,7 @@ def _save_errors(data: dict):
         logger.error(f"Ошибка сохранения данных об ошибках: {e}")
 
 
-def record_error(user_id: int, case_id: str, scenario: str, score: int):
+def record_error(user_id: int, case_id: str, scenario: str, score: int, topic: str | None = None):
     # записываю попытку пользователя по кейсу
     data = _load_errors()
 
@@ -60,6 +60,7 @@ def record_error(user_id: int, case_id: str, scenario: str, score: int):
             "attempts": 0,
             "total_score": 0,
             "errors": [],
+            "topic": (topic or "").strip()[:120],
         }
 
     case_stats = user_data[scenario][case_id]
@@ -96,6 +97,7 @@ def get_weak_areas(user_id: int, scenario: str) -> list:
                     "case_id": case_id,
                     "avg_score": avg_score,
                     "attempts": stats["attempts"],
+                    "topic": stats.get("topic", ""),
                 })
 
     # сортирую по баллу — худшие темы первыми
@@ -136,6 +138,7 @@ SCENARIO_NAMES = {
     "university": "выбор вуза",
     "job": "поиск работы",
     "adaptation": "адаптация в компании",
+    "lead": "лидерство",
 }
 
 # ключи кнопок сценариев — по ним получаем название на языке юзера
@@ -154,6 +157,15 @@ def _scenario_name(scenario: str, lang: str) -> str:
     return SCENARIO_NAMES.get(scenario, scenario)
 
 
+def clear_user_errors(user_id: int):
+    # сброс прогресса в UI — так же чистим слабые зоны юзера
+    data = _load_errors()
+    if str(user_id) in data:
+        data.pop(str(user_id))
+        _save_errors(data)
+        logger.info(f"Очищены слабые зоны: user={user_id}")
+
+
 def get_clarifying_question(user_id: int, scenario: str, lang: str = "ru") -> str | None:
     # уточняющий вопрос по самой слабой теме — в следующих сессиях бот ковыряет её глубже
     weak_areas = get_weak_areas(user_id, scenario)
@@ -162,7 +174,7 @@ def get_clarifying_question(user_id: int, scenario: str, lang: str = "ru") -> st
     area = weak_areas[0]
     friendly = _scenario_name(scenario, lang)
     return t("adaptive_clarify_question", lang,
-             friendly=friendly, case_id=area.get("case_id", ""), score=area["avg_score"])
+             friendly=friendly, case_id=area.get("topic") or area.get("case_id", ""), score=area["avg_score"])
 
 
 def get_recommendations(user_id: int, scenario: str, lang: str = "ru") -> list:
@@ -172,7 +184,7 @@ def get_recommendations(user_id: int, scenario: str, lang: str = "ru") -> list:
 
     recommendations = []
     for area in weak_areas[:3]:
-        case_id = area.get("case_id", "unknown")
+        case_id = area.get("topic") or area.get("case_id", "unknown")
         recommendations.append(
             t("adaptive_recommendation", lang, case_id=case_id, friendly=friendly, score=area['avg_score'])
         )

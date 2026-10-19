@@ -144,6 +144,12 @@ def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
             pdf.cell(0, 7, f"{task_label} {number} ({case_id}): {score}/10")
             pdf.ln(7)
             pdf.set_font("DejaVu" if pdf._use_dejavu else "Helvetica", "", 10)
+            # ответ юзера — чтобы PDF был диалогом, а не только баллами
+            user_answer_text = (answer.get("user_answer") or "").strip()
+            if user_answer_text:
+                ua_label = "Your answer:" if lang == "en" else "Твой ответ:"
+                pdf.multi_cell(0, 6, f"{ua_label} {user_answer_text[:600]}")
+                pdf.ln(1)
             pdf.multi_cell(0, 6, feedback)
             pdf.ln(2)
     else:

@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 # слова которые gigachat иногда подмешивает в ответы
 SLANG_WORDS = {"норм", "братан", "чувак", "дружище"}
 
+# RAG-запрос для генерации кейсов по сценарию (ТЗ этап 2: кейсы на основе базы знаний)
+_SCENARIO_RAG_QUERY = {
+    "university": "выбор вуза поступление ЕГЭ подводные камни",
+    "job": "собеседование резюме стажировка первая работа",
+    "adaptation": "адаптация первый рабочий день коллеги начальник",
+    "lead": "лидерство делегирование обратная связь команда",
+}
+
 def strip_slang(text: str) -> str:
     if not text:
         return text
@@ -291,10 +299,39 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
     if _cleanup_counter % _CLEANUP_INTERVAL == 0:
         _cleanup_old_data()
 
+    # слабые области: темы пользователя, не номера заданий
+    topic_hint = ""
     weak_hint = ""
     if weak_areas:
-        weak_list = ", ".join([w.get("case_id", "") for w in weak_areas[:3]])
-        weak_hint = f"\n\nСфокусируйся на слабых областях пользователя: {weak_list}."
+        topics = []
+        for w in weak_areas[:3]:
+            t_ = (w.get("topic") or "").strip()
+            if t_:
+                topics.append(t_[:60])
+        if topics:
+            topic_hint = " Слабые темы пользователя: " + "; ".join(topics) + ". Построй кейсы вокруг них."
+        else:
+            weak_hint = "\n\nСфокусируйся на областях, которые новичок чаще проваливает."
+
+    # факты из базы знаний — кейс строится вокруг реального подводного камня
+    facts_block = ""
+    try:
+        topic_query = _SCENARIO_RAG_QUERY.get(scenario, scenario)
+        rag_docs = await asyncio.to_thread(search, f"{topic_query} {topic_hint}", 3, None)
+        seen: set[str] = set()
+        facts = []
+        for d in rag_docs:
+            url = d.metadata.get("source_url")
+            url = url or None
+            snippet = " ".join(d.page_content.split())[:220]
+            if snippet in seen:
+                continue
+            seen.add(snippet)
+            facts.append(f"- {snippet}" + (f" (источник: {url})" if url else ""))
+        if facts:
+            facts_block = "\n\nФАКТЫ ИЗ БАЗЫ ЗНАНИЙ (построй кейс вокруг одного из них, конкретика важна):\n" + "\n".join(facts) + "\n"
+    except Exception as e:
+        logger.warning(f"generate_case: RAG недоступен, кейс без факт-базы: {e}")
 
     if case_type == "choice":
         system = (
@@ -303,7 +340,8 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             "- Ситуация — 1-2 предложения, живым языком.\n"
             "- Используй имена: Аня, Дима, Катя, Саша.\n"
             "- Конкретика: должности, цифры, названия.\n"
-            f"{weak_hint}\n\n"
+            f"{topic_hint}\n\n"
+            f"{facts_block}\n"
             "ВАРИАНТЫ:\n"
             "- Ровно 4 штуки (A, B, C, D)\n"
             "- Один правильный, три — правдоподобные ловушки\n"
@@ -337,7 +375,8 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             "- Конкретика: должности, цифры, названия.\n"
             "- Каждый кейс — отдельная история.\n"
             "- Меняй формат: диалог, письмо, ситуация, дилемма.\n"
-            f"{weak_hint}\n\n"
+            f"{topic_hint}{weak_hint}\n\n"
+            f"{facts_block}\n"
             "ЧЕРЕДУЙ:\n"
             "- Отрасли: IT, маркетинг, продажи, HR, финансы\n"
             "- Форматы: 'Что ответить?', 'Как поступить?', 'Разбери ошибку'\n"
