@@ -84,7 +84,7 @@ async def cmd_start(msg: Message):
 
     # /start — новая сессия, старую память диалога сбрасываем
     from bot.core.ai_engine import clear_history
-    clear_history(msg.from_user.id)
+    await clear_history(msg.from_user.id)
 
     # экзамен, если шёл, тоже закрываем
     from bot.handlers.examiner import abandon_exam
@@ -230,7 +230,7 @@ async def _new_scenario(msg: Message, state: FSMContext, scenario: str):
 
     await state.clear()
     from bot.core.ai_engine import clear_history
-    clear_history(msg.from_user.id)
+    await clear_history(msg.from_user.id)
 
     await _show_screen(
         msg,
@@ -266,7 +266,7 @@ async def cb_back_to_menu(cb: CallbackQuery, state: FSMContext):
 
     await state.clear()
     from bot.core.ai_engine import clear_history
-    clear_history(cb.from_user.id)
+    await clear_history(cb.from_user.id)
 
     # если шёл экзамен — закрываем его с реальными цифрами
     from bot.handlers.examiner import abandon_exam

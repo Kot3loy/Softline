@@ -11,7 +11,7 @@ from bot.translations import t
 
 
 @pytest.mark.asyncio
-async def test_answer_info_question_with_context():
+async def test_answer_info_question_with_context(test_db):
     doc = SimpleNamespace(
         page_content="МГУ проходной балл 270 по профилю",
         metadata={"source": "data/universities/msu.md"},
@@ -34,11 +34,11 @@ async def test_answer_info_question_with_context():
 
     assert 777 in ai_engine._sessions
     assert ai_engine._sessions[777][0]["answer"] == "Ответ, основанный на контексте"
-    ai_engine.clear_history(777)
+    await ai_engine.clear_history(777)
 
 
 @pytest.mark.asyncio
-async def test_answer_info_question_no_context():
+async def test_answer_info_question_no_context(test_db):
     with patch("bot.core.scenarios.search", return_value=[]) as search_mock, \
             patch("bot.core.scenarios.ask_ai", new_callable=AsyncMock) as ai_mock:
         ai_mock.return_value = "Ответ без базы знаний"
@@ -76,10 +76,10 @@ async def test_answer_info_question_saves_history_only_with_user_id():
 
 
 @pytest.mark.asyncio
-async def test_answer_info_question_keeps_session_context():
+async def test_answer_info_question_keeps_session_context(test_db):
     # второй вопрос должен видеть первый диалог в промпте
     uid = 888001
-    ai_engine.clear_history(uid)
+    await ai_engine.clear_history(uid)
     try:
         with patch("bot.core.scenarios.search", return_value=[]), \
                 patch("bot.core.scenarios.ask_ai", new_callable=AsyncMock) as ai_mock:
@@ -97,22 +97,22 @@ async def test_answer_info_question_keeps_session_context():
         assert "первый вопрос" in second_prompt
         assert "Первый ответ" in second_prompt
     finally:
-        ai_engine.clear_history(uid)
+        await ai_engine.clear_history(uid)
 
 
 @pytest.mark.asyncio
-async def test_history_cleared_on_exit():
+async def test_history_cleared_on_exit(test_db):
     # после выхода из меню память сессии обнуляется
     uid = 888002
-    ai_engine.clear_history(uid)
+    await ai_engine.clear_history(uid)
     with patch("bot.core.scenarios.search", return_value=[]), \
             patch("bot.core.scenarios.ask_ai", new_callable=AsyncMock) as ai_mock:
         ai_mock.return_value = "ответ"
         await answer_info_question("вопрос", "university", user_id=uid)
-        assert ai_engine.has_history(uid) is True
+        assert await ai_engine.has_history(uid) is True
 
-    ai_engine.clear_history(uid)
-    assert ai_engine.has_history(uid) is False
+    await ai_engine.clear_history(uid)
+    assert await ai_engine.has_history(uid) is False
 
     with patch("bot.core.scenarios.search", return_value=[]), \
             patch("bot.core.scenarios.ask_ai", new_callable=AsyncMock) as ai_mock:
@@ -122,9 +122,9 @@ async def test_history_cleared_on_exit():
 
 
 @pytest.mark.asyncio
-async def test_history_capped_at_max_turns():
+async def test_history_capped_at_max_turns(test_db):
     uid = 888003
-    ai_engine.clear_history(uid)
+    await ai_engine.clear_history(uid)
     try:
         with patch("bot.core.scenarios.search", return_value=[]), \
                 patch("bot.core.scenarios.ask_ai", new_callable=AsyncMock) as ai_mock:
@@ -132,9 +132,9 @@ async def test_history_capped_at_max_turns():
             for i in range(6):
                 await answer_info_question(f"вопрос {i}", "university", user_id=uid)
 
-        assert len(ai_engine.get_history(uid)) == ai_engine.MAX_TURNS
+        assert len(await ai_engine.get_history(uid)) == ai_engine.MAX_TURNS
     finally:
-        ai_engine.clear_history(uid)
+        await ai_engine.clear_history(uid)
 
 
 @pytest.mark.asyncio

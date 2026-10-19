@@ -469,6 +469,13 @@ async def save_dialog(user_id: int, question: str, answer: str):
     await db.commit()
 
 
+async def clear_dialog_history(user_id: int):
+    # удалить сохранённый диалог (сессия прервана)
+    db = await _get_db()
+    await db.execute("DELETE FROM dialog_history WHERE user_id = ?", (user_id,))
+    await db.commit()
+
+
 async def get_dialog(user_id: int, limit: int = 4) -> list:
     # загрузить диалог из базы
     db = await _get_db()

@@ -9,7 +9,7 @@ from gigachat import GigaChatAsyncClient
 from gigachat.models import ChatCompletionRequest, ChatMessage, ChatModelOptions
 from bot.config import config
 from bot.core.rag import search
-from bot.database.db import save_dialog, get_dialog
+from bot.database.db import save_dialog, get_dialog, clear_dialog_history
 
 logger = logging.getLogger(__name__)
 
@@ -157,12 +157,16 @@ async def save_turn(user_id: int, question: str, answer: str):
     _sessions_ttl[user_id] = time.time()
 
 
-def clear_history(user_id: int):
-    # выход из меню — сессия обрывается
+async def clear_history(user_id: int):
+    # выход из меню — сессия обрывается: память и БД-диалог сطلыются
     if not user_id:
         return
     _sessions.pop(user_id, None)
     _sessions_ttl.pop(user_id, None)
+    try:
+        await clear_dialog_history(user_id)
+    except Exception as e:
+        logger.warning(f"Не удалось очистить диалог в БД: {e}")
 
 
 def _parse_json(text: str, default: dict) -> dict:

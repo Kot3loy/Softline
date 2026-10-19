@@ -75,6 +75,33 @@ async def test_db():
     """)
 
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS dialog_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            question TEXT,
+            answer TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS exam_sessions (
+            exam_session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            scenario TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            total_cases INTEGER DEFAULT 0,
+            cases_completed INTEGER DEFAULT 0,
+            avg_score REAL DEFAULT 0,
+            cases_data TEXT,
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ended_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )
+    """)
+
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS case_answers (
             answer_id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL,

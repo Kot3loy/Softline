@@ -174,7 +174,7 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
 
     # экзамен — новая сессия, инфо-история больше не нужна
     from bot.core.ai_engine import clear_history
-    clear_history(user_id)
+    await clear_history(user_id)
 
     await _replace_card(cb.message, t("exam_start", lang, n=count), kb=None)
 

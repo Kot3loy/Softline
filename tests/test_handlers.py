@@ -34,14 +34,14 @@ async def test_back_to_menu_breaks_session(test_db, mock_callback):
     from bot.handlers.start import cb_back_to_menu
 
     uid = mock_callback.from_user.id
-    ai_engine.save_turn(uid, "вопрос", "ответ")
+    await ai_engine.save_turn(uid, "вопрос", "ответ")
     state = AsyncMock()
 
     await cb_back_to_menu(mock_callback, state)
 
     state.clear.assert_awaited_once()
-    assert ai_engine.has_history(uid) is False
-    ai_engine.clear_history(uid)
+    assert await ai_engine.has_history(uid) is False
+    await ai_engine.clear_history(uid)
 
 
 @pytest.mark.asyncio

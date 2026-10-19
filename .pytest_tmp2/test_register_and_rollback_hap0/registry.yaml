@@ -1,0 +1,29 @@
+prompts:
+  demo:
+    versions:
+    - name: demo
+      version: v1
+      content: content v1
+      author: tester
+      description: ''
+      created_at: '2026-10-19T21:21:07.789285'
+      active: true
+    - name: demo
+      version: v2
+      content: content v2
+      author: tester
+      description: ''
+      created_at: '2026-10-19T21:21:07.790346'
+      active: true
+    current: v1
+versions:
+- name: demo
+  version: v1
+  author: tester
+  created_at: '2026-10-19T21:21:07.789285'
+  description: ''
+- name: demo
+  version: v2
+  author: tester
+  created_at: '2026-10-19T21:21:07.790346'
+  description: ''
