@@ -10,6 +10,19 @@ logger = logging.getLogger(__name__)
 
 MAX_VOICE_LENGTH = 1500
 
+# языки распознавания google stt (русский по умолчанию — проект русскоязычный)
+STT_LANGUAGE_RU = "ru-RU"
+STT_LANGUAGE_EN = "en-US"
+STT_RETRIES = 2
+STT_RETRY_DELAY = 1.0
+
+
+def stt_language_for(lang: str) -> str:
+    # язык интерфейса → язык распознавания речи
+    if (lang or "").lower().startswith("en"):
+        return STT_LANGUAGE_EN
+    return STT_LANGUAGE_RU
+
 # Русские нейронные голоса Microsoft (мужской/женский)
 VOICE_MALE = "ru-RU-DmitryNeural"
 VOICE_FEMALE = "ru-RU-SvetlanaNeural"
@@ -139,8 +152,8 @@ async def text_to_speech(text: str, lang: str = "ru", voice: str | None = None) 
             return None
 
 
-async def speech_to_text(audio_file_path: str) -> tuple:
-    # распознаю wav в текст через google stt (только русский)
+async def speech_to_text(audio_file_path: str, language: str = STT_LANGUAGE_RU) -> tuple:
+    # распознаю wav в текст через google stt
     # возвращает (текст, тип_ошибки): ("привет", None) — ок, (None, "service") — сервис лёг
     try:
         import speech_recognition as sr
@@ -148,29 +161,38 @@ async def speech_to_text(audio_file_path: str) -> tuple:
         logger.error("speech_recognition не установлен. Установи: pip install SpeechRecognition")
         return None, "service"
 
-    try:
-        recognizer = sr.Recognizer()
-        recognizer.dynamic_energy_threshold = True
-        recognizer.pause_threshold = 0.6  # чуть быстрее резать конец фразы
+    # сервис может моргнуть — делаем пару попыток, прежде чем сдаться
+    for attempt in range(STT_RETRIES):
+        try:
+            recognizer = sr.Recognizer()
+            recognizer.dynamic_energy_threshold = True
+            recognizer.pause_threshold = 0.6  # чуть быстрее резать конец фразы
+            recognizer.energy_threshold = 250  # тихую запись тоже распознаём
+            try:
+                recognizer.operation_timeout = 20
+            except Exception:
+                pass
 
-        with sr.AudioFile(audio_file_path) as source:
-            audio = recognizer.record(source)
+            with sr.AudioFile(audio_file_path) as source:
+                audio = recognizer.record(source)
 
-        # распознаём всегда на русском
-        text = recognizer.recognize_google(audio, language="ru-RU")
-        logger.info(f"Распознан текст: {text[:100]}...")
-        return text, None
+            text = recognizer.recognize_google(audio, language=language)
+            logger.info(f"Распознан текст ({language}): {text[:100]}...")
+            return text, None
 
-    except sr.UnknownValueError:
-        # сервис ответил, но речь не разобрал
-        logger.info("STT: речь не распознана")
-        return None, "no_speech"
+        except sr.UnknownValueError:
+            # сервис ответил, но речь не разобрал — повторять бессмысленно
+            logger.info("STT: речь не распознана")
+            return None, "no_speech"
 
-    except sr.RequestError as e:
-        # Нет связи с Google STT
-        logger.warning(f"STT: сервис недоступен: {e}")
-        return None, "service"
+        except sr.RequestError as e:
+            # нет связи с google stt — одна повторная попытка
+            logger.warning(f"STT: сервис недоступен (попытка {attempt + 1}): {e}")
+            if attempt < STT_RETRIES - 1:
+                await asyncio.sleep(STT_RETRY_DELAY)
 
-    except Exception as e:
-        logger.warning(f"Ошибка распознавания: {e}")
-        return None, "service"
+        except Exception as e:
+            logger.warning(f"Ошибка распознавания: {e}")
+            return None, "service"
+
+    return None, "service"

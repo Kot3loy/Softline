@@ -54,6 +54,7 @@ async def test_db():
             last_name TEXT,
             voice_enabled INTEGER DEFAULT 0,
             current_scenario TEXT DEFAULT 'university',
+            language TEXT DEFAULT 'ru',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )

@@ -4,7 +4,7 @@ import logging
 import tempfile
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from aiogram import Router, F
 from aiogram.types import Message, FSInputFile, Chat, User
 from aiogram.fsm.context import FSMContext
@@ -55,12 +55,30 @@ else:
     _ffprobe_path = None
 
 from bot.translations import t
-from bot.utils.voice import speech_to_text, text_to_speech
+from bot.utils.voice import speech_to_text, text_to_speech, stt_language_for
 from bot.utils.lang import get_lang
 from bot.core.scenarios import answer_info_question
 from bot.database.db import get_or_create_user
 
 router = Router()
+
+# google stt точнее всего на mono 16 кГц и не принимает записи длиннее минуты
+STT_SAMPLE_RATE = 16000
+STT_MAX_SECONDS = 60
+
+
+def _convert_to_wav(ogg_path: str, wav_path: str) -> str:
+    # ogg из телеграма → mono 16 кГц wav: так распознавание заметно точнее
+    audio = AudioSegment.from_ogg(ogg_path)
+    if len(audio) > STT_MAX_SECONDS * 1000:
+        audio = audio[: STT_MAX_SECONDS * 1000]
+    audio = audio.set_channels(1).set_frame_rate(STT_SAMPLE_RATE)
+    try:
+        audio = audio.normalize()
+    except Exception:
+        pass
+    audio.export(wav_path, format="wav")
+    return wav_path
 
 
 @dataclass
@@ -70,8 +88,10 @@ class VoiceMessage:
     from_user: User
     chat: Chat
     bot: object
+    sent_texts: list = field(default_factory=list)
 
     async def answer(self, text: str, **kwargs):
+        self.sent_texts.append(text)
         return await self.bot.send_message(self.chat.id, text, **kwargs)
 
     async def answer_voice(self, *args, **kwargs):
@@ -89,9 +109,10 @@ async def handle_voice(msg: Message, state: FSMContext):
 
     user_id = msg.from_user.id
 
+    user_data = await get_or_create_user(user_id)
+    lang = get_lang(user_data)
+
     if not _VOICE_AVAILABLE:
-        user_data = await get_or_create_user(user_id)
-        lang = get_lang(user_data)
         await msg.answer(t("voice_error", lang))
         return
 
@@ -105,29 +126,22 @@ async def handle_voice(msg: Message, state: FSMContext):
 
         wav_file = os.path.join(tmp_dir, "voice.wav")
         try:
-            audio = AudioSegment.from_ogg(tmp_file)
-            audio.export(wav_file, format="wav")
+            _convert_to_wav(tmp_file, wav_file)
         except Exception as e:
             # Без ffmpeg конвертация не удалась — дальше идти некуда
             _log.warning(f"Ошибка конвертации аудио: {e}")
-            user_data = await get_or_create_user(user_id)
-            lang = get_lang(user_data)
             await msg.answer(t("voice_error", lang))
             return
 
         await msg.bot.send_chat_action(msg.chat.id, "typing")
-        text, stt_error = await speech_to_text(wav_file)
+        text, stt_error = await speech_to_text(wav_file, stt_language_for(lang))
 
         if not text:
-            user_data = await get_or_create_user(user_id)
-            lang = get_lang(user_data)
             key = "voice_stt_error" if stt_error == "service" else "voice_no_speech"
             await msg.answer(t(key, lang))
             return
 
-        user_data = await get_or_create_user(user_id)
         scenario = user_data.get("current_scenario", "university")
-        lang = get_lang(user_data)
 
         answer = await answer_info_question(text, scenario, user_id=user_id, lang=lang)
 
@@ -139,7 +153,9 @@ async def handle_voice(msg: Message, state: FSMContext):
         from bot.handlers.info import _should_show_disclaimer
         disclaimer = t("disclaimer", lang) if _should_show_disclaimer(answer) else ""
 
-        voice_file = await text_to_speech(answer)
+        # озвучка только если юзер сам включил голосовые ответы
+        voice_enabled = user_data.get("voice_enabled", 0) == 1
+        voice_file = await text_to_speech(answer) if voice_enabled else None
 
         if voice_file:
             try:
@@ -169,9 +185,10 @@ async def _handle_voice_exam(msg: Message, state: FSMContext):
     # голос как ответ на задание
     from bot.handlers.examiner import handle_exam_answer
 
+    user_data = await get_or_create_user(msg.from_user.id)
+    lang = get_lang(user_data)
+
     if not _VOICE_AVAILABLE:
-        user_data = await get_or_create_user(msg.from_user.id)
-        lang = get_lang(user_data)
         await msg.answer(t("voice_error", lang))
         return
 
@@ -185,19 +202,14 @@ async def _handle_voice_exam(msg: Message, state: FSMContext):
 
         wav_file = os.path.join(tmp_dir, "voice.wav")
         try:
-            audio = AudioSegment.from_ogg(tmp_file)
-            audio.export(wav_file, format="wav")
+            _convert_to_wav(tmp_file, wav_file)
         except Exception:
-            user_data = await get_or_create_user(msg.from_user.id)
-            lang = get_lang(user_data)
             await msg.answer(t("voice_error", lang))
             return
 
-        text, stt_error = await speech_to_text(wav_file)
+        text, stt_error = await speech_to_text(wav_file, stt_language_for(lang))
 
         if not text:
-            user_data = await get_or_create_user(msg.from_user.id)
-            lang = get_lang(user_data)
             key = "voice_stt_error" if stt_error == "service" else "voice_no_speech"
             await msg.answer(t(key, lang))
             return
@@ -209,6 +221,17 @@ async def _handle_voice_exam(msg: Message, state: FSMContext):
             bot=msg.bot,
         )
         await handle_exam_answer(fake_msg, state)
+
+        # озвучка разбора — только если юзер включил голосовые ответы
+        if user_data.get("voice_enabled", 0) == 1 and fake_msg.sent_texts:
+            feedback_text = fake_msg.sent_texts[0]
+            voice_file = await text_to_speech(feedback_text)
+            if voice_file:
+                try:
+                    await msg.answer_voice(FSInputFile(voice_file))
+                finally:
+                    if os.path.exists(voice_file):
+                        os.remove(voice_file)
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

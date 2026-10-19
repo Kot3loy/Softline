@@ -6,7 +6,12 @@ from types import ModuleType
 import pytest
 
 from bot.translations import STRINGS, t
-from bot.utils.voice import MAX_VOICE_LENGTH, prepare_text_for_voice, speech_to_text
+from bot.utils.voice import (
+    MAX_VOICE_LENGTH,
+    prepare_text_for_voice,
+    speech_to_text,
+    stt_language_for,
+)
 
 
 # --- Фейковый speech_recognition для мока сети ---
@@ -21,8 +26,9 @@ class FakeRequestError(Exception):
 
 
 class FakeRecognizer:
-    behavior = "ok"  # ok | unknown | request
+    behavior = "ok"  # ok | unknown | request | request_then_ok
     last_language = None
+    calls = 0
 
     def __init__(self):
         self.dynamic_energy_threshold = False
@@ -33,10 +39,13 @@ class FakeRecognizer:
 
     def recognize_google(self, audio, language=None):
         FakeRecognizer.last_language = language
+        FakeRecognizer.calls += 1
         if FakeRecognizer.behavior == "ok":
             return "привет мир"
         if FakeRecognizer.behavior == "unknown":
             raise FakeUnknownValueError()
+        if FakeRecognizer.behavior == "request_then_ok" and FakeRecognizer.calls > 1:
+            return "со второй попытки"
         raise FakeRequestError("connection refused")
 
 
@@ -60,8 +69,10 @@ def fake_sr(monkeypatch):
     mod.RequestError = FakeRequestError
     mod.AudioFile = FakeAudioFile
     monkeypatch.setitem(sys.modules, "speech_recognition", mod)
+    monkeypatch.setattr("bot.utils.voice.STT_RETRY_DELAY", 0, raising=False)
     FakeRecognizer.behavior = "ok"
     FakeRecognizer.last_language = None
+    FakeRecognizer.calls = 0
     yield mod
     FakeRecognizer.behavior = "ok"
 
@@ -75,17 +86,31 @@ async def test_stt_success(fake_sr):
     assert err is None
 
 
-async def test_stt_always_russian(fake_sr):
-    """Проект онлайн — распознавание всегда на русском"""
+async def test_stt_default_language_is_russian(fake_sr):
+    """По умолчанию распознаём на русском"""
     await speech_to_text("some.wav")
     assert FakeRecognizer.last_language == "ru-RU"
 
 
-async def test_stt_recognizer_tuned(fake_sr):
-    """Пороги распознавания выставлены явно"""
-    await speech_to_text("some.wav")
-    # ловим экземпляр через последний вызов
-    assert FakeRecognizer.last_language == "ru-RU"
+async def test_stt_explicit_language_is_respected(fake_sr):
+    """Язык можно передать — для англоязычного интерфейса"""
+    await speech_to_text("some.wav", language="en-US")
+    assert FakeRecognizer.last_language == "en-US"
+
+
+async def test_stt_retries_after_service_error(fake_sr):
+    """Сервис моргнул — пробуем ещё раз, прежде чем сдаться"""
+    FakeRecognizer.behavior = "request_then_ok"
+    text, err = await speech_to_text("some.wav")
+    assert text == "со второй попытки"
+    assert err is None
+    assert FakeRecognizer.calls == 2
+
+
+def test_stt_language_mapping():
+    assert stt_language_for("ru") == "ru-RU"
+    assert stt_language_for("en") == "en-US"
+    assert stt_language_for("") == "ru-RU"
 
 
 async def test_stt_no_speech(fake_sr):
@@ -147,6 +172,13 @@ def test_settings_voice_hint_exists():
         assert "русск" in hint.lower() or "russian" in hint.lower()
 
 
+def test_settings_voice_hint_mentions_always_accepted():
+    # голосовые принимаем всегда, озвучка — только при включённом голосе
+    ru = t("settings_voice_hint", "ru").lower()
+    assert "всегда" in ru
+    assert "голос" in ru
+
+
 def test_voice_stt_error_exists():
     for lang in ("ru", "en"):
         msg = t("voice_stt_error", lang)
@@ -159,6 +191,6 @@ def test_settings_text_includes_hint():
 
     text = _settings_text("ru")
     assert "Настройки" in text
-    assert "только на русском" in text
+    assert "русский" in text
     text_en = _settings_text("en")
-    assert "Russian only" in text_en
+    assert "Russian" in text_en

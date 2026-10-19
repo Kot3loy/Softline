@@ -51,8 +51,8 @@ STRINGS = {
     # === SETTINGS ===
     "settings_header": {"ru": "⚙️ <b>Настройки</b>", "en": "⚙️ <b>Settings</b>"},
     "settings_voice_hint": {
-        "ru": "🎙 Распознавание голоса — только на русском",
-        "en": "🎙 Voice recognition — Russian only",
+        "ru": "🎙 Голосовые принимаю всегда: русский и английский.\n🔊 Бот отвечает голосом, когда включён «Голос».",
+        "en": "🎙 Voice messages always accepted: Russian and English.\n🔊 The bot replies with voice while «Voice» is on.",
     },
     "voice_on": {"ru": "🔊 Голос: Вкл", "en": "🔊 Voice: On"},
     "voice_off": {"ru": "🔊 Голос: Выкл", "en": "🔊 Voice: Off"},
