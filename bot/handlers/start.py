@@ -89,7 +89,7 @@ async def cmd_start(msg: Message):
 
     # экзамен, если шёл, тоже закрываем
     from bot.handlers.examiner import abandon_exam
-    await abandon_exam(msg.from_user.id)
+    await abandon_exam(msg.from_user.id, msg.bot)
 
     sent = await msg.answer(t("welcome_msg", lang), reply_markup=main_menu_kb(lang), parse_mode="HTML")
     _remember(msg.chat.id, getattr(sent, "message_id", None))
@@ -273,7 +273,7 @@ async def cb_back_to_menu(cb: CallbackQuery, state: FSMContext):
 
     # если шёл экзамен — закрываем его с реальными цифрами
     from bot.handlers.examiner import abandon_exam
-    await abandon_exam(cb.from_user.id)
+    await abandon_exam(cb.from_user.id, cb.bot)
 
     await _replace_card(cb.message, text, kb=None)
     await cb.answer()

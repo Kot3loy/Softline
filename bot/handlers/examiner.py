@@ -82,6 +82,21 @@ async def _drop_feedback(session: dict, bot):
     session["feedback_msg_id"] = None
 
 
+async def _strip_buttons(session: dict, bot):
+    # снять кнопку с разбора последнего задания: клик по старому сообщению
+    # из прошлого экзамена не должен запускать ничего в новом
+    message_id = session.get("feedback_msg_id")
+    chat_id = session.get("chat_id")
+    if bot is None or not message_id or not chat_id:
+        return
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=chat_id, message_id=message_id, reply_markup=None
+        )
+    except Exception as e:
+        logger.debug(f"Не удалось снять кнопки с разбора: {e}")
+
+
 def _choice_case_type(index: int) -> str:
     # каждый второй кейс — тест с вариантами: экзамен интерактивнее
     return "choice" if index % 2 == 1 else "open"
@@ -193,12 +208,17 @@ async def _generate_case_for_index(scenario: str, index: int, weak_areas=None) -
     return case
 
 
-async def abandon_exam(user_id: int):
+async def abandon_exam(user_id: int, bot=None):
     # юзер вышел из экзамена не до конца — записываем реальные цифры,
     # иначе сессия навсегда остаётся незавершённой и не попадает в отчёт
     session = exam_sessions.pop(user_id, None)
     if not session:
         return
+
+    # задание и разбор убираем из чата: их кнопки не должны доживать до нового экзамена
+    if bot is not None:
+        await _drop_case(session, bot)
+        await _drop_feedback(session, bot)
 
     scores = session.get("scores") or []
     answered = len(scores)
@@ -251,6 +271,8 @@ async def _finalize_exam(user_id: int, session: dict, message, lang: str):
     ])
 
     await message.answer(result_text, reply_markup=kb, parse_mode="HTML")
+    # кнопку с разбора последнего задания снимаем: отчёт остался, а старая кнопка больше не живёт
+    await _strip_buttons(session, getattr(message, "bot", None))
     exam_sessions.pop(user_id, None)
 
 
@@ -469,6 +491,12 @@ async def cb_show_results(cb: CallbackQuery, state: FSMContext):
 
     if not session:
         await cb.answer(t("exam_session_not_found", lang), show_alert=True)
+        return
+
+    if not session["scores"]:
+        # ни одного ответа: кнопка осталась от прошлого экзамена или задание пропущено —
+        # закрывать нечего, иначе в прогрессе и в pdf появится пустая сессия
+        await cb.answer(t("exam_need_answer", lang), show_alert=True)
         return
 
     await cb.answer()

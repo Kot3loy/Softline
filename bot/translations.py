@@ -140,6 +140,10 @@ STRINGS = {
         "ru": "Ответ на это задание уже засчитан. Нажми кнопку ниже.",
         "en": "This task is already answered. Press the button below.",
     },
+    "exam_need_answer": {
+        "ru": "Сначала ответь хотя бы на одно задание — потом посчитаем итоги.",
+        "en": "Answer at least one task first, then we'll sum up.",
+    },
     "exam_export": {"ru": "📥 Экспорт в PDF", "en": "📥 Export to PDF"},
     "exam_session_not_found": {"ru": "Сессия не найдена. Начни заново.", "en": "Session not found. Start over."},
     "exam_all_done": {"ru": "Все задания уже пройдены.", "en": "All tasks already completed."},

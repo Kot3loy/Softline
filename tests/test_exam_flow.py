@@ -158,3 +158,121 @@ async def test_full_exam_flow_keeps_chat_clean_and_report(test_db, mock_callback
 
     mock_callback.message.delete.assert_not_awaited()
     assert _texts(mock_callback.message)  # меню приходит новым сообщением
+
+
+def _session(cases, session_id, current=0, case_msg_id=1001, feedback_msg_id=None,
+             answers=None, scores=None, total=None):
+    return {
+        "scenario": "job",
+        "cases": cases,
+        "current": current,
+        "total": total if total is not None else len(cases),
+        "session_id": session_id,
+        "answers": answers or [],
+        "scores": scores or [],
+        "timestamp": 9e9,
+        "chat_id": UID,
+        "case_msg_id": case_msg_id,
+        "feedback_msg_id": feedback_msg_id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_finish_without_any_answer_is_blocked(test_db, mock_callback):
+    # живая кнопка «Завершить» из прошлого экзамена не должна закрывать новый с нулём ответов
+    from bot.database.db import create_session, get_or_create_user, get_user_stats
+
+    await get_or_create_user(UID)
+    session_id = await create_session(UID, "job", "examiner", 3)
+    examiner.exam_sessions[UID] = _session([_open(), _choice(), _open()], session_id)
+    mock_callback.data = "show_results"
+
+    try:
+        await examiner.cb_show_results(mock_callback, AsyncMock())
+
+        assert UID in examiner.exam_sessions  # экзамен не закрыт
+        assert not _texts(mock_callback.message)  # отчёта нет
+        mock_callback.answer.assert_awaited_with(t("exam_need_answer", "ru"), show_alert=True)
+        stats = await get_user_stats(UID)
+        assert stats["scenarios"] == {}  # пустой экзамен в прогресс не попал
+    finally:
+        examiner.exam_sessions.pop(UID, None)
+
+
+@pytest.mark.asyncio
+async def test_last_review_button_dies_after_report(test_db, mock_callback, mock_message):
+    # после отчёта кнопка «Завершить» из разбора последнего задания больше не работает
+    from bot.database.db import create_session, get_or_create_user
+
+    await get_or_create_user(UID)
+    session_id = await create_session(UID, "job", "examiner", 1)
+    examiner.exam_sessions[UID] = _session([_open()], session_id, feedback_msg_id=2001)
+    mock_message.text = "ответ"
+    evaluation = {"score": 9, "feedback": "хорошо", "strengths": [], "weaknesses": [], "sources": []}
+
+    try:
+        with patch.object(examiner, "evaluate_answer", AsyncMock(return_value=evaluation)), \
+                patch.object(examiner, "record_error", lambda *a, **kw: None):
+            await examiner.handle_exam_answer(mock_message, AsyncMock())
+            review_id = examiner.exam_sessions[UID]["feedback_msg_id"]
+            await examiner.cb_show_results(mock_callback, AsyncMock())
+
+        assert UID not in examiner.exam_sessions
+        # с разбора последнего задания кнопку сняли: нажать её ещё раз не выйдет
+        calls = mock_callback.message.bot.edit_message_reply_markup.await_args_list
+        assert calls
+        assert calls[-1].kwargs["reply_markup"] is None
+        assert calls[-1].kwargs["message_id"] == review_id
+    finally:
+        examiner.exam_sessions.pop(UID, None)
+
+
+@pytest.mark.asyncio
+async def test_abandon_exam_removes_task_and_review(test_db, mock_callback):
+    # выход в меню: задание и разбор убираем — кнопки брошенного экзамена не доживают до нового
+    from bot.database.db import create_session, get_or_create_user
+
+    await get_or_create_user(UID)
+    session_id = await create_session(UID, "job", "examiner", 3)
+    examiner.exam_sessions[UID] = _session(
+        [_open()], session_id, case_msg_id=1001, feedback_msg_id=2001,
+    )
+
+    await examiner.abandon_exam(UID, mock_callback.bot)
+
+    assert UID not in examiner.exam_sessions
+    deleted = _deleted(mock_callback)
+    assert (UID, 1001) in deleted
+    assert (UID, 2001) in deleted
+
+
+@pytest.mark.asyncio
+async def test_finished_exam_is_saved_to_db(test_db, mock_callback, mock_message):
+    # честно отвеченное задание попадает и в прогресс, и в pdf-отчёт
+    from bot.database.db import get_case_answers, get_user_stats
+
+    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open"):
+        return _open()
+
+    evaluation = {"score": 8, "feedback": "ок", "strengths": [], "weaknesses": [], "sources": []}
+
+    with patch.object(examiner, "generate_case", side_effect=fake_generate), \
+            patch.object(examiner, "get_weak_areas", lambda *a, **k: []), \
+            patch.object(examiner, "record_error", lambda *a, **kw: None), \
+            patch.object(examiner, "evaluate_answer", AsyncMock(return_value=evaluation)), \
+            patch("bot.core.ai_engine.clear_history", new_callable=AsyncMock):
+        mock_callback.data = "cases_3"
+        await examiner.cb_start_exam(mock_callback, AsyncMock())
+        scenario = examiner.exam_sessions[UID]["scenario"]
+
+        mock_message.text = "развёрнутый ответ"
+        await examiner.handle_exam_answer(mock_message, AsyncMock())
+        await examiner.cb_show_results(mock_callback, AsyncMock())
+
+    stats = await get_user_stats(UID)
+    assert stats["scenarios"][scenario]["sessions"] == 1
+    assert stats["scenarios"][scenario]["avg_score"] == 8.0
+
+    answers = await get_case_answers(UID, scenario, only_completed=True)
+    assert len(answers) == 1
+    assert answers[0]["score"] == 8
