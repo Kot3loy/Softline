@@ -52,3 +52,9 @@ data/learning_errors.json
 data/reports/
 # pytest тестовые артефакты
 .pytest_tmp/
+
+# локальные скиллы агента (не для репо)
+.agents/
+.opencode/
+.superpowers/
+.claude/
