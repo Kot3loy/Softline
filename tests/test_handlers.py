@@ -90,8 +90,8 @@ async def test_abandon_exam_without_session_is_noop():
 
 
 @pytest.mark.asyncio
-async def test_answer_choice_deletes_case_message(test_db, mock_callback):
-    # после ответа на тестовое задание его текст удаляется из чата
+async def test_answer_choice_marks_case_message(test_db, mock_callback):
+    # после ответа на тест задание остаётся в чате, но варианты помечены
     from bot.database.db import create_session, get_or_create_user
     from bot.handlers import examiner
 
@@ -120,16 +120,67 @@ async def test_answer_choice_deletes_case_message(test_db, mock_callback):
         "case_msg_id": 777,
         "feedback_msg_id": None,
     }
-    mock_callback.data = "answer_choice_0"
+    mock_callback.data = "answer_choice_2"
 
     try:
         with patch.object(examiner, "record_error", lambda *a, **kw: None):
             await examiner.cb_answer_choice(mock_callback, AsyncMock())
 
-        mock_callback.bot.delete_message.assert_awaited_once_with(555, 777)
+        # задание не удаляем — размечаем выбранный и верный вариант прямо в нём
+        mock_callback.bot.delete_message.assert_not_awaited()
+        assert mock_callback.message.edit_text.await_count == 1
+        marked = mock_callback.message.edit_text.await_args.args[0]
+        assert "✅ A" in marked
+        assert "❌ C" in marked
+        mock_callback.message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
         assert examiner.exam_sessions[uid]["case_msg_id"] is None
-        # разбор с оценкой остаётся в чате
+        # разбор с оценкой — отдельным сообщением
         assert mock_callback.message.answer.await_count == 1
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_answer_choice_double_click_ignored(test_db, mock_callback):
+    # повторный клик по вариантам не должен второй раз засчитывать ответ
+    from bot.database.db import create_session, get_or_create_user
+    from bot.handlers import examiner
+
+    uid = mock_callback.from_user.id
+    await get_or_create_user(uid)
+    session_id = await create_session(uid, "job", "examiner", 3)
+
+    case = {
+        "type": "choice",
+        "situation": "s",
+        "question": "q",
+        "options": ["A", "B", "C", "D"],
+        "correct": 0,
+        "explanation": "e",
+    }
+    examiner.exam_sessions[uid] = {
+        "scenario": "job",
+        "cases": [case, case, case],
+        "current": 0,
+        "total": 3,
+        "session_id": session_id,
+        "answers": [{"case_idx": 0, "user_answer": "[Выбор: A]", "evaluation": {"score": 10}}],
+        "scores": [10],
+        "timestamp": 9e9,
+        "chat_id": 555,
+        "case_msg_id": None,
+        "feedback_msg_id": None,
+    }
+    mock_callback.data = "answer_choice_1"
+
+    try:
+        with patch.object(examiner, "record_error") as rec:
+            await examiner.cb_answer_choice(mock_callback, AsyncMock())
+
+        assert examiner.exam_sessions[uid]["scores"] == [10]
+        assert len(examiner.exam_sessions[uid]["answers"]) == 1
+        mock_callback.message.answer.assert_not_awaited()
+        rec.assert_not_called()
     finally:
         examiner.exam_sessions.pop(uid, None)
 
@@ -350,7 +401,10 @@ async def test_exam_start_requires_scenario(test_db, mock_callback):
         assert session is not None
         assert session["total"] == 5
         assert len(session["cases"]) == 5
-        assert fake_generate.await_count == 5
+        # ai здесь всегда отдаёт открытый кейс: невалидные тесты заменяются открытыми,
+        # поэтому вызовов больше, чем заданий
+        assert fake_generate.await_count >= 5
+        assert all(c["type"] == "open" for c in session["cases"])
 
         state.set_state.assert_awaited_once_with(ExamState.waiting_for_answer)
         mock_callback.answer.assert_awaited_once()

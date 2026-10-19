@@ -73,6 +73,53 @@ async def _drop_case(session: dict, bot):
     session["case_msg_id"] = None
 
 
+def _choice_case_type(index: int) -> str:
+    # каждый второй кейс — тест с вариантами: экзамен интерактивнее
+    return "choice" if index % 2 == 1 else "open"
+
+
+def _valid_choice(case: dict) -> bool:
+    # llm иногда отдаёт 4 варианта с дублями или неверный индекс — такой тест не показываем
+    if not isinstance(case, dict) or case.get("type") != "choice":
+        return False
+    options = case.get("options")
+    if not isinstance(options, list) or len(options) != 4:
+        return False
+    cleaned = [str(o).strip() for o in options]
+    if any(not o for o in cleaned) or len(set(cleaned)) != 4:
+        return False
+    correct = case.get("correct")
+    if isinstance(correct, bool) or not isinstance(correct, int) or not 0 <= correct < 4:
+        return False
+    return bool(str(case.get("question") or "").strip())
+
+
+def _choice_marks(case: dict, chosen_idx: int) -> list[str]:
+    # ✅ верный вариант, ❌ выбранный неверный, ▫️ остальные — видно разбор прямо в задании
+    options = case.get("options") or []
+    correct_idx = case.get("correct", 0)
+    marks = []
+    for i, option in enumerate(options):
+        if i == correct_idx:
+            marks.append(f"✅ {option}")
+        elif i == chosen_idx:
+            marks.append(f"❌ {option}")
+        else:
+            marks.append(f"▫️ {option}")
+    return marks
+
+
+async def _generate_case_for_index(scenario: str, index: int, weak_areas=None) -> dict:
+    # битый тест перегенерируем один раз, иначе задаём обычный открытый вопрос
+    case_type = _choice_case_type(index)
+    case = await generate_case(scenario, weak_areas=weak_areas, case_type=case_type)
+    if case_type == "choice" and not _valid_choice(case):
+        logger.warning("Тест от ai невалиден — перегенерирую")
+        retry = await generate_case(scenario, case_type="choice")
+        case = retry if _valid_choice(retry) else await generate_case(scenario, case_type="open")
+    return case
+
+
 async def abandon_exam(user_id: int):
     # юзер вышел из экзамена не до конца — записываем реальные цифры,
     # иначе сессия навсегда остаётся незавершённой и не попадает в отчёт
@@ -183,8 +230,7 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
 
     cases = []
     for i in range(count):
-        case_type = "choice" if (i % 3 == 1) else "open"
-        case = await generate_case(scenario, weak_areas=weak_areas if i == 0 else None, case_type=case_type)
+        case = await _generate_case_for_index(scenario, i, weak_areas if i == 0 else None)
         # Переводим кейс если нужно
         if lang != "ru":
             case = dict(case)
@@ -293,6 +339,11 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
         await cb.answer(t("exam_not_choice", lang), show_alert=True)
         return
 
+    # двойной клик по вариантам: ответ на это задание уже засчитан
+    if any(a.get("case_idx") == current_idx for a in session["answers"]):
+        await cb.answer()
+        return
+
     try:
         chosen_idx = int(cb.data.replace("answer_choice_", ""))
     except ValueError:
@@ -347,8 +398,19 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
     next_idx = current_idx + 1
     await cb.answer()
 
-    # задание отработало — убираем его из чата, разбор остаётся
-    await _drop_case(session, cb.bot)
+    # задание не удаляем: помечаем варианты, чтобы юзер видел свой выбор и верный ответ
+    if options:
+        marked_text = (
+            f"{case.get('situation', '')}\n\n"
+            f"{t('exam_question', lang, text=case.get('question', ''))}\n\n"
+            + "\n".join(_choice_marks(case, chosen_idx))
+        )
+        try:
+            await cb.message.edit_text(marked_text, parse_mode="HTML")
+            await cb.message.edit_reply_markup(reply_markup=None)
+        except Exception as e:
+            logger.debug(f"Не удалось разметить варианты: {e}")
+    session["case_msg_id"] = None
 
     if next_idx >= session["total"]:
         await _finalize_exam(user_id, session, cb.message, lang)
