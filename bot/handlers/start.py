@@ -11,6 +11,7 @@ from aiogram.fsm.context import FSMContext
 from bot.translations import t
 from bot.utils.keyboards import main_menu_kb, scenario_info_kb, settings_kb, progress_kb, back_to_menu_kb
 from bot.utils.lang import get_lang, KNOWN_BUTTONS
+from bot.utils.plural import noun
 from bot.utils.voice import text_to_speech
 from bot.core.ai_engine import _sanitize_input
 from bot.database.db import get_or_create_user, get_user_stats, update_user
@@ -327,7 +328,8 @@ async def btn_progress(msg: Message):
                 "job": t("btn_job", lang),
                 "adaptation": t("btn_adaptation", lang),
             }.get(scenario, scenario)
-            text += t("progress_scenario_line", lang, name=name, sessions=data['sessions'], avg=data['avg_score']) + "\n"
+            text += t("progress_scenario_line", lang, name=name, sessions=data['sessions'],
+                      avg=data['avg_score'], noun=noun(data['sessions'], lang, "session")) + "\n"
 
     await _show_screen(msg, text, kb=progress_kb(lang))
 

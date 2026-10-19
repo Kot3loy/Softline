@@ -19,6 +19,7 @@ from bot.core.common_mistakes import find_mistakes
 from bot.database.db import create_session, end_session, save_case_answer, update_user, get_or_create_user
 from bot.handlers.start import _replace_card
 from bot.utils.loading import LoadingIndicator
+from bot.utils.plural import noun
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +298,7 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
     from bot.core.ai_engine import clear_history
     await clear_history(user_id)
 
-    await _replace_card(cb.message, t("exam_start", lang, n=count), kb=None)
+    await _replace_card(cb.message, t("exam_start", lang, n=count, noun=noun(count, lang, "task")), kb=None)
 
     weak_areas = get_weak_areas(user_id, scenario)
 

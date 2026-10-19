@@ -124,10 +124,8 @@ STRINGS = {
         "ru": "Предложу тебе проблемные задания.\nТы отвечаешь — я даю обратную связь.\n\nСколько заданий?",
         "en": "I'll give you practice tasks.\nYou answer — I give feedback.\n\nHow many tasks?",
     },
-    "exam_cases_3": {"ru": "3 задания", "en": "3 tasks"},
-    "exam_cases_5": {"ru": "5 заданий", "en": "5 tasks"},
-    "exam_cases_10": {"ru": "10 заданий", "en": "10 tasks"},
-    "exam_start": {"ru": "🎯 Начинаем! Генерирую {n} заданий...", "en": "🎯 Starting! Generating {n} tasks..."},
+    "exam_cases": {"ru": "{n} {noun}", "en": "{n} {noun}"},
+    "exam_start": {"ru": "🎯 Начинаем! Генерирую {n} {noun}...", "en": "🎯 Starting! Generating {n} {noun}..."},
     "exam_loading": {"ru": "⏳ Подбираю задания…", "en": "⏳ Picking tasks…"},
     "exam_task": {"ru": "📋 <b>Задание {n} из {total}</b>", "en": "📋 <b>Task {n} of {total}</b>"},
     "exam_question": {"ru": "❓ <b>{text}</b>", "en": "❓ <b>{text}</b>"},
@@ -176,7 +174,7 @@ STRINGS = {
     "progress_sessions": {"ru": "Всего сессий: {n}", "en": "Total sessions: {n}"},
     "progress_avg": {"ru": "Средний балл: {n}", "en": "Average score: {n}"},
     "progress_by_scenario": {"ru": "<b>По сценариям:</b>", "en": "<b>By scenario:</b>"},
-    "progress_scenario_line": {"ru": "  {name}: {sessions} сессий, средний {avg}", "en": "  {name}: {sessions} sessions, avg {avg}"},
+    "progress_scenario_line": {"ru": "  {name}: {sessions} {noun}, средний {avg}", "en": "  {name}: {sessions} {noun}, avg {avg}"},
     "progress_reset_btn": {"ru": "🗑 Сбросить прогресс", "en": "🗑 Reset progress"},
 
     # === PDF EXPORT ===

@@ -3,6 +3,7 @@
 import logging
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from bot.translations import t
+from bot.utils.plural import noun
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +50,15 @@ def scenario_info_kb(scenario: str, lang: str = "ru"):
 
 def exam_cases_kb(lang: str = "ru"):
     # сколько заданий потянет юзер
+    def _case_button(count: int):
+        return InlineKeyboardButton(
+            text=t("exam_cases", lang, n=count, noun=noun(count, lang, "task")),
+            callback_data=f"cases_{count}",
+        )
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text=t("exam_cases_3", lang), callback_data="cases_3"),
-                InlineKeyboardButton(text=t("exam_cases_5", lang), callback_data="cases_5"),
-                InlineKeyboardButton(text=t("exam_cases_10", lang), callback_data="cases_10"),
-            ],
+            [_case_button(3), _case_button(5), _case_button(10)],
             [InlineKeyboardButton(text=t("btn_back_short", lang), callback_data="back_to_menu")],
         ]
     )
