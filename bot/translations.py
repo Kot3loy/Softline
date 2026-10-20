@@ -233,6 +233,10 @@ STRINGS = {
         "ru": 'Задание «{case_id}» ({friendly}) — средний балл {score:.1f}, повтори его',
         "en": 'Task "{case_id}" ({friendly}) — avg score {score:.1f}, review it',
     },
+    "adaptive_session_recommendation": {
+        "ru": "Задание {n} — {score}/10: «{topic}». Разбери ошибку: перечитай объяснение и пройди тему ещё раз.",
+        "en": 'Task {n} — {score}/10: "{topic}". Review the mistake: reread the explanation and retry the topic.',
+    },
 
     # === RAG ===
     "rag_relevant_info": {

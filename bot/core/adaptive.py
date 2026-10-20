@@ -177,14 +177,37 @@ def get_clarifying_question(user_id: int, scenario: str, lang: str = "ru") -> st
              friendly=friendly, case_id=area.get("topic") or area.get("case_id", ""), score=area["avg_score"])
 
 
-def get_recommendations(user_id: int, scenario: str, lang: str = "ru") -> list:
-    # советы по слабым зонам
+def get_recommendations(user_id: int, scenario: str, lang: str = "ru", session_results: list | None = None) -> list:
+    # советы: сначала задания только что пройденной сессии, потом накопленная история
     weak_areas = get_weak_areas(user_id, scenario)
     friendly = _scenario_name(scenario, lang)
 
     recommendations = []
-    for area in weak_areas[:3]:
+    seen_topics = set()
+
+    for item in sorted(session_results or [], key=lambda x: x.get("score", 0)):
+        score = item.get("score", 0)
+        if score >= 7:
+            continue
+        topic = " ".join(str(item.get("topic") or "").split())[:80]
+        key = topic.lower()
+        if key in seen_topics:
+            continue
+        seen_topics.add(key)
+        recommendations.append(
+            t("adaptive_session_recommendation", lang,
+              n=item.get("number", "?"), topic=topic or friendly, score=score)
+        )
+        if len(recommendations) >= 3:
+            break
+
+    for area in weak_areas:
+        if len(recommendations) >= 3:
+            break
         case_id = area.get("topic") or area.get("case_id", "unknown")
+        if str(case_id).lower() in seen_topics:
+            continue
+        seen_topics.add(str(case_id).lower())
         recommendations.append(
             t("adaptive_recommendation", lang, case_id=case_id, friendly=friendly, score=area['avg_score'])
         )

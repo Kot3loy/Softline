@@ -245,7 +245,18 @@ async def _finalize_exam(user_id: int, session: dict, message, lang: str):
         await end_session(session["session_id"], answered, avg_score)
         session["_ended"] = True
 
-    recommendations = get_recommendations(user_id, session["scenario"], lang)
+    # задания текущей сессии: слабые видны сразу, история может быть ещё пустой
+    session_results = []
+    for answer in session.get("answers") or []:
+        idx = answer.get("case_idx", 0)
+        case = session["cases"][idx] if 0 <= idx < len(session["cases"]) else {}
+        session_results.append({
+            "number": idx + 1,
+            "topic": case.get("question") or case.get("situation") or "",
+            "score": (answer.get("evaluation") or {}).get("score", 5),
+        })
+
+    recommendations = get_recommendations(user_id, session["scenario"], lang, session_results)
 
     result_text = f"{t('exam_complete', lang)}\n\n"
     result_text += t("exam_done", lang, n=answered, total=session["total"]) + "\n"

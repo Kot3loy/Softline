@@ -169,7 +169,16 @@ def generate_report(user_id, scenario, results, case_answers=None, lang="ru"):
     recs_label = "Recommendations" if lang == "en" else "Рекомендации"
     pdf.chapter_title(recs_label)
 
-    recs = get_recommendations(user_id, scenario, lang)
+    # слабые задания этой сессии видны сразу, даже если истории ещё нет
+    session_results = [
+        {
+            "number": (answer.get("case_id") or "").rsplit("_", 1)[-1] or "?",
+            "topic": (answer.get("question") or "").strip(),
+            "score": answer.get("score", 0),
+        }
+        for answer in (case_answers or [])
+    ]
+    recs = get_recommendations(user_id, scenario, lang, session_results)
     if recs:
         recs_text = "\n".join(f"• {r}" for r in recs)
         pdf.chapter_body(recs_text)
