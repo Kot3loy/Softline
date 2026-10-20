@@ -90,7 +90,7 @@ async def test_start_exam_generates_half_choice_cases(test_db, mock_callback):
     uid = mock_callback.from_user.id
     mock_callback.data = "cases_5"
 
-    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open"):
+    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open", avoid=None):
         return _choice() if case_type == "choice" else _open()
 
     try:
@@ -112,7 +112,7 @@ async def test_invalid_choice_falls_back_to_open_case(test_db, mock_callback):
     mock_callback.data = "cases_3"
     calls = []
 
-    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open"):
+    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open", avoid=None):
         calls.append(case_type)
         if case_type == "choice":
             return _choice(options=["A", "A", "B", "C"])
@@ -140,7 +140,7 @@ async def test_valid_choice_from_retry_is_used(test_db, mock_callback):
     # первая генерация теста битая, повторная — валидная
     state = {"n": 0}
 
-    async def smarter_generate(scenario, difficulty="medium", weak_areas=None, case_type="open"):
+    async def smarter_generate(scenario, difficulty="medium", weak_areas=None, case_type="open", avoid=None):
         if case_type != "choice":
             return _open()
         state["n"] += 1
@@ -155,6 +155,32 @@ async def test_valid_choice_from_retry_is_used(test_db, mock_callback):
         cases = examiner.exam_sessions[uid]["cases"]
         assert cases[1]["type"] == "choice"
         assert cases[1]["options"] == ["Первый", "Второй", "Третий", "Четвёртый"]
+    finally:
+        examiner.exam_sessions.pop(uid, None)
+
+
+@pytest.mark.asyncio
+async def test_start_exam_passes_previous_cases_as_avoid(test_db, mock_callback):
+    # каждое следующее задание генерируется с памятью о прошлых завязках
+    uid = mock_callback.from_user.id
+    mock_callback.data = "cases_3"
+    seen = []
+
+    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open", avoid=None):
+        seen.append(list(avoid or []))
+        if case_type == "choice":
+            return _choice(situation=f"Ситуация {len(seen)}", question="Вопрос?")
+        return _open(situation=f"Ситуация {len(seen)}", question="Вопрос?")
+
+    try:
+        with patch.object(examiner, "generate_case", side_effect=fake_generate), \
+                patch.object(examiner, "get_weak_areas", lambda *a, **k: []), \
+                patch("bot.core.ai_engine.clear_history", new_callable=AsyncMock):
+            await examiner.cb_start_exam(mock_callback, AsyncMock())
+
+        assert seen[0] == []
+        assert "Ситуация 1" in seen[1][0]
+        assert len(seen[2]) == 2
     finally:
         examiner.exam_sessions.pop(uid, None)
 

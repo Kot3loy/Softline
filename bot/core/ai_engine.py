@@ -5,10 +5,11 @@ import json
 import re
 import time
 import asyncio
+from difflib import SequenceMatcher
 from gigachat import GigaChatAsyncClient
 from gigachat.models import ChatCompletionRequest, ChatMessage, ChatModelOptions
 from bot.config import config
-from bot.core.choice_options import normalize_choice_case
+from bot.core.choice_options import LETTERS, _LETTER_ALIASES, normalize_choice_case
 from bot.core.rag import search
 from bot.database.db import save_dialog, get_dialog, clear_dialog_history
 
@@ -207,31 +208,144 @@ def _parse_json(text: str, default: dict) -> dict:
         return default
 
 
-def _parse_text_response(text: str, case_type: str) -> dict:
-    # если ai вернул не json, а просто текст — парсю его по строкам
-    lines = text.strip().split("\n")
+def case_signature(case: dict) -> str:
+    # одна строка на задание: по ней видно, повторяется ли завязка
+    if not isinstance(case, dict):
+        return str(case or "").strip()
+    return f"{case.get('situation') or ''} {case.get('question') or ''}".strip()
 
+
+def _normalize_for_compare(text) -> str:
+    return " ".join(re.findall(r"\w+", str(text or "").lower()))
+
+
+def _is_repeat_case(case: dict, avoid: list | None, threshold: float = 0.75) -> bool:
+    # завязка похожа на уже заданную — считаем повтором
+    if not avoid:
+        return False
+    signature = _normalize_for_compare(case_signature(case))
+    if not signature:
+        return False
+    for previous in avoid:
+        other = _normalize_for_compare(previous)
+        if other and SequenceMatcher(None, signature, other).ratio() >= threshold:
+            return True
+    return False
+
+
+# метки разделов в текстовом ответе: gigachat пишет и по-русски, и по-английски
+_SECTION_RE = re.compile(
+    r"^(?P<name>"
+    r"ситуация|situation|"
+    r"вопрос|question|"
+    r"варианты(?:\s+ответа)?|options?|"
+    r"правильный\s+ответ|correct(?:\s+answer)?|"
+    r"объяснение|explanation|"
+    r"подсказка|hint"
+    r")\s*[:：]\s*(?P<value>.*)$",
+    re.IGNORECASE,
+)
+
+_SECTION_FIELDS = {
+    "ситуация": "situation",
+    "situation": "situation",
+    "вопрос": "question",
+    "question": "question",
+    "варианты": "options",
+    "варианты ответа": "options",
+    "option": "options",
+    "options": "options",
+    "правильный ответ": "correct",
+    "correct": "correct",
+    "correct answer": "correct",
+    "объяснение": "explanation",
+    "explanation": "explanation",
+    "подсказка": "hint",
+    "hint": "hint",
+}
+
+# строка варианта: "- ответ", "1. ответ", "A) ответ"
+_OPTION_LINE_RE = re.compile(
+    r"^(?:[-–—•*·]|\(?\d{1,2}[\).:]|[A-Da-dА-Га-г][\).:])\s*(?P<text>.+)$"
+)
+
+
+def _join_text(current: str, extra: str) -> str:
+    extra = (extra or "").strip()
+    if not extra:
+        return current
+    return f"{current} {extra}".strip() if current else extra
+
+
+def _parse_correct_index(value: str, count: int = 4) -> int:
+    # модель пишет букву ("Correct: B") или номер ("Correct: 3") — номер считает с единицы
+    value = (value or "").strip()
+    letter = re.match(r"^[\(\[]?\s*([A-Da-dА-Га-г])\b", value)
+    if letter:
+        char = letter.group(1).upper()
+        char = _LETTER_ALIASES.get(char, char)
+        if char in LETTERS:
+            return LETTERS.index(char)
+
+    number = re.search(r"\d{1,2}", value)
+    if number:
+        n = int(number.group())
+        if n == 0:
+            return 0
+        if n <= max(count, 4):
+            return n - 1
+    return 0
+
+
+def _parse_text_response(text: str, case_type: str) -> dict:
+    # если ai вернул не json, а текст — разбираю разделы: Ситуация/Вопрос/Options/Correct/Explanation
     situation = ""
     question = ""
-    options = []
-    correct = 0
     hint = ""
+    explanation = ""
+    options: list[str] = []
+    correct_raw = ""
+    field = None
 
-    for line in lines:
-        line = line.strip()
-        if line.startswith("Ситуация:") or line.startswith("СITUАЦИЯ:"):
-            situation = line.split(":", 1)[1].strip()
-        elif line.startswith("Вопрос:") or line.startswith("ВОПРОС:"):
-            question = line.split(":", 1)[1].strip()
-        elif re.match(r'^[A-D][\).]\s*', line):
-            options.append(re.sub(r'^[A-D][\).]\s*', '', line).strip())
-        elif "правильный ответ" in line.lower():
-            parts = line.split(":", 1)
-            letter = parts[1].strip().upper() if len(parts) > 1 else ""
-            if letter in "ABCD":
-                correct = ord(letter) - ord("A")
-        elif line.startswith("Объяснение:") or line.startswith("ПОДСКАЗКА:"):
-            hint = line.split(":", 1)[1].strip()
+    for raw_line in (text or "").strip().split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        section = _SECTION_RE.match(line)
+        if section:
+            field = _SECTION_FIELDS[section.group("name").lower()]
+            value = section.group("value").strip()
+            if field == "correct":
+                correct_raw = value
+                field = None
+            elif field == "options":
+                if value:
+                    options.append(value.lstrip("-–—•*· ").strip())
+            elif field == "situation":
+                situation = _join_text(situation, value)
+            elif field == "question":
+                question = _join_text(question, value)
+            elif field == "hint":
+                hint = _join_text(hint, value)
+            elif field == "explanation":
+                explanation = _join_text(explanation, value)
+            continue
+
+        option = _OPTION_LINE_RE.match(line)
+        if option:
+            options.append(option.group("text").strip())
+            field = "options"
+            continue
+
+        if field == "situation":
+            situation = _join_text(situation, line)
+        elif field == "question":
+            question = _join_text(question, line)
+        elif field == "hint":
+            hint = _join_text(hint, line)
+        elif field == "explanation":
+            explanation = _join_text(explanation, line)
 
     if not situation:
         return {}
@@ -245,8 +359,8 @@ def _parse_text_response(text: str, case_type: str) -> dict:
 
     if case_type == "choice":
         result["options"] = options
-        result["correct"] = correct
-        result["explanation"] = hint
+        result["correct"] = _parse_correct_index(correct_raw, len(options))
+        result["explanation"] = explanation or hint
         # варианты часто лежат внутри вопроса; заглушки не показываем — тогда это открытый вопрос
         result = normalize_choice_case(result)
         if result["type"] == "open":
@@ -298,7 +412,7 @@ async def ask_ai(prompt: str, system_prompt: str = "", max_tokens: int = 700, st
     return "Извини, AI сейчас перегружен. Попробуй через минуту."
 
 
-async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list | None = None, case_type: str = "open") -> dict:
+async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: list | None = None, case_type: str = "open", avoid: list | None = None) -> dict:
     # генерирую задание для экзаменатора через ai
     global _cleanup_counter
     _cleanup_counter += 1
@@ -318,6 +432,21 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             topic_hint = " Слабые темы пользователя: " + "; ".join(topics) + ". Построй кейсы вокруг них."
         else:
             weak_hint = "\n\nСфокусируйся на областях, которые новичок чаще проваливает."
+
+    # антиповтор: какие завязки уже были в этой сессии
+    avoid_block = ""
+    if avoid:
+        previous = []
+        for item in avoid:
+            text_ = " ".join(str(item or "").split())[:160]
+            if text_ and text_ not in previous:
+                previous.append(text_)
+        if previous:
+            avoid_block = (
+                "\n\nЭТИ СИТУАЦИИ УЖЕ БЫЛИ — НЕ ПОВТОРЯЙ ИХ И НЕ ПЕРЕСКАЗЫВАЙ:\n"
+                + "\n".join(f"- {p}" for p in previous[:6])
+                + "\nВозьми другую завязку: другое имя, другая сфера, другой поворот.\n"
+            )
 
     # факты из базы знаний — кейс строится вокруг реального подводного камня
     facts_block = ""
@@ -355,10 +484,11 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             "- Не перечисляй варианты внутри question — там только сам вопрос\n"
             "- Примерно одной длины\n"
             "- Без 'Все вышеперечисленное'\n\n"
-            "НЕ ПОВТОРЯЙСЯ. Формат: короткая история + конкретный вопрос."
+            f"НЕ ПОВТОРЯЙСЯ. Формат: короткая история + конкретный вопрос.{avoid_block}"
         )
         prompt = (
-            f"Сгенерируй 1 мини-тест для сценария '{scenario}'.\n\n"
+            f"Сгенерируй 1 мини-тест для сценария '{scenario}'.\n"
+            "Ответь ТОЛЬКО валидным JSON, без markdown и без текста до/после.\n\n"
             "Примеры (НЕ копируй):\n"
             "- Аня на собеседовании в Яндексе. HR: 'ЗП 80К, но через полгода пересмотр'. "
             "Аня хочет 100К. Что ответить?\n"
@@ -389,10 +519,11 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
             "- Отрасли: IT, маркетинг, продажи, HR, финансы\n"
             "- Форматы: 'Что ответить?', 'Как поступить?', 'Разбери ошибку'\n"
             "- Сложность: бытовые → стратегические\n\n"
-            "НЕ ПОВТОРЯЙСЯ. Формат: короткая история + конкретный вопрос."
+            f"НЕ ПОВТОРЯЙСЯ. Формат: короткая история + конкретный вопрос.{avoid_block}"
         )
         prompt = (
-            f"Сгенерируй 1 мини-кейс для сценария '{scenario}'.\n\n"
+            f"Сгенерируй 1 мини-кейс для сценария '{scenario}'.\n"
+            "Ответь ТОЛЬКО валидным JSON, без markdown и без текста до/после.\n\n"
             "Примеры (НЕ копируй):\n"
             "- Ты 2 недели на новой работе. Начальник в отпуске. "
             "Коллега: 'Этот отчёт делается по-другому, но я занят'. Что делаешь?\n"
@@ -413,6 +544,7 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
     fallback_prompt = (
         f"Сгенерируй задание для сценария '{scenario}'. "
         'Верни ТОЛЬКО JSON без markdown: {{"type": "{case_type}", "situation": "...", "question": "..."}}'
+        f"{avoid_block}"
     )
     prompts = [prompt, fallback_prompt, fallback_prompt]
 
@@ -438,7 +570,13 @@ async def generate_case(scenario: str, difficulty: str = "medium", weak_areas: l
                 if parsed["type"] == "open":
                     parsed.setdefault("good_answer_points", [])
                     parsed.setdefault("common_mistakes", [])
-            return {**parsed, "scenario": scenario}
+            case = {**parsed, "scenario": scenario}
+            # завязка повторилась — пробуем ещё раз, но на последней попытке отдаём как есть
+            if _is_repeat_case(case, avoid) and attempt < MAX_RETRIES - 1:
+                logger.info("generate_case: задание похоже на предыдущее — перегенерирую")
+                await asyncio.sleep(RETRY_DELAY)
+                continue
+            return case
 
         logger.warning(f"generate_case: невалидный JSON (попытка {attempt + 1})")
         if attempt < MAX_RETRIES - 1:

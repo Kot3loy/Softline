@@ -48,7 +48,7 @@ def _kb(mock):
 async def test_full_exam_flow_keeps_chat_clean_and_report(test_db, mock_callback, mock_message):
     state = AsyncMock()
 
-    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open"):
+    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open", avoid=None):
         return _choice() if case_type == "choice" else _open()
 
     evaluation = {
@@ -251,7 +251,7 @@ async def test_finished_exam_is_saved_to_db(test_db, mock_callback, mock_message
     # честно отвеченное задание попадает и в прогресс, и в pdf-отчёт
     from bot.database.db import get_case_answers, get_user_stats
 
-    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open"):
+    async def fake_generate(scenario, difficulty="medium", weak_areas=None, case_type="open", avoid=None):
         return _open()
 
     evaluation = {"score": 8, "feedback": "ок", "strengths": [], "weaknesses": [], "sources": []}

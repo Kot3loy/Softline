@@ -13,7 +13,7 @@ from bot.translations import t
 from bot.core.choice_options import LETTERS, clean_question, is_placeholder_options
 from bot.utils.keyboards import exam_cases_kb, case_answer_kb, choice_answer_kb
 from bot.utils.lang import get_lang
-from bot.core.ai_engine import generate_case, evaluate_answer, _strip_markdown
+from bot.core.ai_engine import generate_case, case_signature, evaluate_answer, _strip_markdown
 from bot.core.adaptive import record_error, get_weak_areas, get_recommendations, get_clarifying_question
 from bot.core.common_mistakes import find_mistakes
 from bot.database.db import create_session, end_session, save_case_answer, update_user, get_or_create_user
@@ -197,14 +197,14 @@ def _render_marked_case(case: dict, lang: str, chosen_idx: int) -> str:
     return "\n".join(parts)
 
 
-async def _generate_case_for_index(scenario: str, index: int, weak_areas=None) -> dict:
+async def _generate_case_for_index(scenario: str, index: int, weak_areas=None, avoid=None) -> dict:
     # битый тест перегенерируем один раз, иначе задаём обычный открытый вопрос
     case_type = _choice_case_type(index)
-    case = await generate_case(scenario, weak_areas=weak_areas, case_type=case_type)
+    case = await generate_case(scenario, weak_areas=weak_areas, case_type=case_type, avoid=avoid)
     if case_type == "choice" and not _valid_choice(case):
         logger.warning("Тест от ai невалиден — перегенерирую")
-        retry = await generate_case(scenario, case_type="choice")
-        case = retry if _valid_choice(retry) else await generate_case(scenario, case_type="open")
+        retry = await generate_case(scenario, case_type="choice", avoid=avoid)
+        case = retry if _valid_choice(retry) else await generate_case(scenario, case_type="open", avoid=avoid)
     return case
 
 
@@ -325,10 +325,15 @@ async def cb_start_exam(cb: CallbackQuery, state: FSMContext):
     weak_areas = get_weak_areas(user_id, scenario)
 
     cases = []
+    # завязки прошлых заданий: следующая генерация не должна их повторять
+    asked = []
     # пока ai подбирает задания — показываем стикер-индикатор, потом убираем
     async with LoadingIndicator(cb.bot, cb.message.chat.id, fallback_text=t("exam_loading", lang)):
         for i in range(count):
-            case = await _generate_case_for_index(scenario, i, weak_areas if i == 0 else None)
+            case = await _generate_case_for_index(scenario, i, weak_areas if i == 0 else None, avoid=asked)
+            signature = case_signature(case)
+            if signature and "Не удалось сгенерировать" not in signature:
+                asked.append(signature)
             # Переводим кейс если нужно
             if lang != "ru":
                 case = dict(case)
