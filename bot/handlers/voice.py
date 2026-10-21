@@ -2,7 +2,9 @@
 
 import logging
 import tempfile
+import asyncio
 import os
+import html
 import shutil
 from dataclasses import dataclass, field
 from aiogram import Router, F
@@ -144,7 +146,7 @@ async def handle_voice(msg: Message, state: FSMContext):
 
         wav_file = os.path.join(tmp_dir, "voice.wav")
         try:
-            _convert_to_wav(tmp_file, wav_file)
+            await asyncio.to_thread(_convert_to_wav, tmp_file, wav_file)
         except Exception as e:
             # Без ffmpeg конвертация не удалась — дальше идти некуда
             _log.warning(f"Ошибка конвертации аудио: {e}")
@@ -170,6 +172,8 @@ async def handle_voice(msg: Message, state: FSMContext):
 
         from bot.handlers.info import _should_show_disclaimer
         disclaimer = t("disclaimer", lang) if _should_show_disclaimer(answer) else ""
+        # текст от llm уходит в parse_mode=HTML: экранируем спецсимволы
+        safe_answer = html.escape(answer)
 
         # озвучка только если юзер сам включил голосовые ответы
         voice_enabled = user_data.get("voice_enabled", 0) == 1
@@ -178,7 +182,7 @@ async def handle_voice(msg: Message, state: FSMContext):
         if voice_file:
             try:
                 await msg.answer_voice(FSInputFile(voice_file))
-                sent = await msg.answer(t("voice_text_prefix", lang, text=answer) + disclaimer, parse_mode="HTML")
+                sent = await msg.answer(t("voice_text_prefix", lang, text=safe_answer) + disclaimer, parse_mode="HTML")
                 try:
                     from bot.handlers.start import _remember
                     _remember(msg.chat.id, getattr(sent, "message_id", None))
@@ -188,7 +192,7 @@ async def handle_voice(msg: Message, state: FSMContext):
                 if os.path.exists(voice_file):
                     os.remove(voice_file)
         else:
-            sent = await msg.answer(answer + disclaimer, parse_mode="HTML")
+            sent = await msg.answer(safe_answer + disclaimer, parse_mode="HTML")
             try:
                 from bot.handlers.start import _remember
                 _remember(msg.chat.id, getattr(sent, "message_id", None))
@@ -220,7 +224,7 @@ async def _handle_voice_exam(msg: Message, state: FSMContext):
 
         wav_file = os.path.join(tmp_dir, "voice.wav")
         try:
-            _convert_to_wav(tmp_file, wav_file)
+            await asyncio.to_thread(_convert_to_wav, tmp_file, wav_file)
         except Exception:
             await msg.answer(t("voice_error", lang))
             return

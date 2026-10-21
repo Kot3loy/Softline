@@ -477,7 +477,7 @@ async def save_dialog(user_id: int, question: str, answer: str):
         (user_id, question, answer),
     )
     await db.execute(
-        "DELETE FROM dialog_history WHERE user_id = ? AND id NOT IN (SELECT id FROM dialog_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 4)",
+        "DELETE FROM dialog_history WHERE user_id = ? AND id NOT IN (SELECT id FROM dialog_history WHERE user_id = ? ORDER BY id DESC LIMIT 4)",
         (user_id, user_id),
     )
     await db.commit()
@@ -494,7 +494,7 @@ async def get_dialog(user_id: int, limit: int = 4) -> list:
     # загрузить диалог из базы
     db = await _get_db()
     cursor = await db.execute(
-        "SELECT question, answer FROM dialog_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        "SELECT question, answer FROM dialog_history WHERE user_id = ? ORDER BY id DESC LIMIT ?",
         (user_id, limit),
     )
     rows = await cursor.fetchall()

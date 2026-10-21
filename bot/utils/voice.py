@@ -152,6 +152,23 @@ async def text_to_speech(text: str, lang: str = "ru", voice: str | None = None) 
             return None
 
 
+def _recognize_sync(sr, audio_file_path: str, language: str) -> str:
+    # сетевое распознавание синхронное: вызываем его из отдельного потока
+    recognizer = sr.Recognizer()
+    recognizer.dynamic_energy_threshold = True
+    recognizer.pause_threshold = 0.6  # чуть быстрее резать конец фразы
+    recognizer.energy_threshold = 250  # тихую запись тоже распознаём
+    try:
+        recognizer.operation_timeout = 20
+    except Exception:
+        pass
+
+    with sr.AudioFile(audio_file_path) as source:
+        audio = recognizer.record(source)
+
+    return recognizer.recognize_google(audio, language=language)
+
+
 async def speech_to_text(audio_file_path: str, language: str = STT_LANGUAGE_RU) -> tuple:
     # распознаю wav в текст через google stt
     # возвращает (текст, тип_ошибки): ("привет", None) — ок, (None, "service") — сервис лёг
@@ -164,19 +181,7 @@ async def speech_to_text(audio_file_path: str, language: str = STT_LANGUAGE_RU) 
     # сервис может моргнуть — делаем пару попыток, прежде чем сдаться
     for attempt in range(STT_RETRIES):
         try:
-            recognizer = sr.Recognizer()
-            recognizer.dynamic_energy_threshold = True
-            recognizer.pause_threshold = 0.6  # чуть быстрее резать конец фразы
-            recognizer.energy_threshold = 250  # тихую запись тоже распознаём
-            try:
-                recognizer.operation_timeout = 20
-            except Exception:
-                pass
-
-            with sr.AudioFile(audio_file_path) as source:
-                audio = recognizer.record(source)
-
-            text = recognizer.recognize_google(audio, language=language)
+            text = await asyncio.to_thread(_recognize_sync, sr, audio_file_path, language)
             logger.info(f"Распознан текст ({language}): {text[:100]}...")
             return text, None
 

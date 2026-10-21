@@ -3,7 +3,19 @@ from bot.database.db import (
     get_or_create_user, update_user, create_session,
     end_session, save_case_answer, get_user_stats,
     get_all_users, get_case_answers, get_global_stats,
+    save_dialog, get_dialog,
 )
+
+
+@pytest.mark.asyncio
+async def test_dialog_memory_keeps_latest_four(test_db):
+    """Память диалога хранит последние 4 реплики, даже если они в одну секунду"""
+    for i in range(1, 6):
+        await save_dialog(555555, f"q{i}", f"a{i}")
+
+    dialog = await get_dialog(555555)
+
+    assert [d["question"] for d in dialog] == ["q2", "q3", "q4", "q5"]
 
 
 @pytest.mark.asyncio

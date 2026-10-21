@@ -763,9 +763,7 @@ async def evaluate_answer(user_answer: str, case_data: dict) -> dict:
             parsed.setdefault("example_answer", "")
             parsed.setdefault("source", "")
             parsed["sources"] = real_sources
-            # Успешно получили валидный ответ
-            if "feedback" in parsed and isinstance(parsed["feedback"], str):
-                parsed["feedback"] = parsed["feedback"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            # текст остаётся сырым: экранируем на месте рендера (чат/PDF)
             return parsed
 
         logger.warning(f"evaluate_answer: невалидный score (попытка {attempt + 1})")

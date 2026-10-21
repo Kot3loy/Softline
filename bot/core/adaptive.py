@@ -4,6 +4,7 @@ import logging
 import json
 import tempfile
 import os
+import threading
 from bot.config import config
 from bot.translations import t
 
@@ -11,6 +12,9 @@ logger = logging.getLogger(__name__)
 
 # Файл для хранения данных об ошибках
 ERRORS_FILE = config.DATA_DIR / "learning_errors.json"
+
+# чтение-изменение-запись JSON из разных потоков: без блокировки теряются записи
+_errors_lock = threading.Lock()
 
 
 def _load_errors() -> dict:
@@ -45,36 +49,37 @@ def _save_errors(data: dict):
 
 def record_error(user_id: int, case_id: str, scenario: str, score: int, topic: str | None = None):
     # записываю попытку пользователя по кейсу
-    data = _load_errors()
+    with _errors_lock:
+        data = _load_errors()
 
-    if str(user_id) not in data:
-        data[str(user_id)] = {}
+        if str(user_id) not in data:
+            data[str(user_id)] = {}
 
-    user_data = data[str(user_id)]
-    if scenario not in user_data:
-        user_data[scenario] = {}
+        user_data = data[str(user_id)]
+        if scenario not in user_data:
+            user_data[scenario] = {}
 
-    # обновляю статистику по кейсу
-    if case_id not in user_data[scenario]:
-        user_data[scenario][case_id] = {
-            "attempts": 0,
-            "total_score": 0,
-            "errors": [],
-            "topic": (topic or "").strip()[:120],
-        }
+        # обновляю статистику по кейсу
+        if case_id not in user_data[scenario]:
+            user_data[scenario][case_id] = {
+                "attempts": 0,
+                "total_score": 0,
+                "errors": [],
+                "topic": (topic or "").strip()[:120],
+            }
 
-    case_stats = user_data[scenario][case_id]
-    case_stats["attempts"] += 1
-    case_stats["total_score"] += score
+        case_stats = user_data[scenario][case_id]
+        case_stats["attempts"] += 1
+        case_stats["total_score"] += score
 
-    # если балл низкий (< 6) — добавляю в список ошибок
-    if score < 6:
-        case_stats["errors"].append({
-            "score": score,
-            "attempt": case_stats["attempts"],
-        })
+        # если балл низкий (< 6) — добавляю в список ошибок
+        if score < 6:
+            case_stats["errors"].append({
+                "score": score,
+                "attempt": case_stats["attempts"],
+            })
 
-    _save_errors(data)
+        _save_errors(data)
     logger.info(f"Записана ошибка: user={user_id}, case={case_id}, score={score}")
 
 
@@ -159,11 +164,12 @@ def _scenario_name(scenario: str, lang: str) -> str:
 
 def clear_user_errors(user_id: int):
     # сброс прогресса в UI — так же чистим слабые зоны юзера
-    data = _load_errors()
-    if str(user_id) in data:
-        data.pop(str(user_id))
-        _save_errors(data)
-        logger.info(f"Очищены слабые зоны: user={user_id}")
+    with _errors_lock:
+        data = _load_errors()
+        if str(user_id) in data:
+            data.pop(str(user_id))
+            _save_errors(data)
+            logger.info(f"Очищены слабые зоны: user={user_id}")
 
 
 def get_clarifying_question(user_id: int, scenario: str, lang: str = "ru") -> str | None:

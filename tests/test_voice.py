@@ -29,6 +29,7 @@ class FakeRecognizer:
     behavior = "ok"  # ok | unknown | request | request_then_ok
     last_language = None
     calls = 0
+    threads = []
 
     def __init__(self):
         self.dynamic_energy_threshold = False
@@ -38,8 +39,10 @@ class FakeRecognizer:
         return "AUDIO"
 
     def recognize_google(self, audio, language=None):
+        import threading
         FakeRecognizer.last_language = language
         FakeRecognizer.calls += 1
+        FakeRecognizer.threads.append(threading.current_thread())
         if FakeRecognizer.behavior == "ok":
             return "привет мир"
         if FakeRecognizer.behavior == "unknown":
@@ -73,6 +76,7 @@ def fake_sr(monkeypatch):
     FakeRecognizer.behavior = "ok"
     FakeRecognizer.last_language = None
     FakeRecognizer.calls = 0
+    FakeRecognizer.threads = []
     yield mod
     FakeRecognizer.behavior = "ok"
 
@@ -84,6 +88,16 @@ async def test_stt_success(fake_sr):
     text, err = await speech_to_text("some.wav")
     assert text == "привет мир"
     assert err is None
+
+
+async def test_stt_runs_off_event_loop(fake_sr):
+    """Сетевое распознавание не должно блокировать event loop"""
+    import threading
+
+    await speech_to_text("some.wav")
+
+    assert FakeRecognizer.threads
+    assert all(thread is not threading.main_thread() for thread in FakeRecognizer.threads)
 
 
 async def test_stt_default_language_is_russian(fake_sr):

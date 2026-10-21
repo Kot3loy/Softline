@@ -1,6 +1,7 @@
 # информационный режим — юзер болтает с ботом, бот отвечает через ai по базе знаний
 
 import os
+import html
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
@@ -95,6 +96,8 @@ async def handle_text_message(msg: Message, state: FSMContext):
 
     # Дисклеймер только при полезном ответе
     disclaimer = t("disclaimer", lang) if _should_show_disclaimer(answer) else ""
+    # текст от llm уходит в parse_mode=HTML: экранируем, иначе "<" и "&" роняют отправку
+    safe_answer = html.escape(answer)
 
     # Проверяем включён ли голос — если да, отправляем голосом + текст
     voice_enabled = user_data.get("voice_enabled", 0) == 1
@@ -105,7 +108,7 @@ async def handle_text_message(msg: Message, state: FSMContext):
             if voice_file:
                 await msg.answer_voice(FSInputFile(voice_file))
                 sent = await msg.answer(
-                    f"{t('voice_text_prefix', lang, text=answer)}{disclaimer}",
+                    f"{t('voice_text_prefix', lang, text=safe_answer)}{disclaimer}",
                     parse_mode="HTML",
                 )
                 try:
@@ -117,7 +120,7 @@ async def handle_text_message(msg: Message, state: FSMContext):
             if voice_file and os.path.exists(voice_file):
                 os.remove(voice_file)
 
-    sent = await msg.answer(f"{answer}{disclaimer}", parse_mode="HTML")
+    sent = await msg.answer(f"{safe_answer}{disclaimer}", parse_mode="HTML")
     try:
         _remember(msg.chat.id, getattr(sent, "message_id", None))
     except Exception:

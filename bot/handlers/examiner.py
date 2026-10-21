@@ -265,7 +265,7 @@ async def _finalize_exam(user_id: int, session: dict, message, lang: str):
     if recommendations:
         result_text += t("exam_recommendations", lang) + "\n"
         for r in recommendations:
-            result_text += f"  • {r}\n"
+            result_text += f"  • {html.escape(r)}\n"
 
     # уточняющий вопрос по самой слабой теме (появляется с 2-й сессии)
     clarify = get_clarifying_question(user_id, session["scenario"], lang)
@@ -478,7 +478,7 @@ async def cb_answer_choice(cb: CallbackQuery, state: FSMContext):
 
     answered = len(session["scores"])
     total = session["total"]
-    text = f"{t('exam_score', lang, n=score)}\n\n{feedback}\n\n"
+    text = f"{t('exam_score', lang, n=score)}\n\n{html.escape(feedback)}\n\n"
     text += t("exam_done", lang, n=answered, total=total)
 
     next_idx = current_idx + 1
@@ -528,8 +528,8 @@ async def _format_mistakes(mistakes: list, lang: str) -> str:
     for m in mistakes[:2]:
         error = await _translate_if_needed(m["error"], lang)
         advice = await _translate_if_needed(m["advice"], lang)
-        block += f"  • {error}\n"
-        block += f"    {t('exam_advice', lang, text=advice)}\n"
+        block += f"  • {html.escape(error)}\n"
+        block += f"    {t('exam_advice', lang, text=html.escape(advice))}\n"
         if m.get("source"):
             block += f"    {t('exam_source', lang, text=m['source'])}\n"
     return block
@@ -616,28 +616,28 @@ async def handle_exam_answer(msg: Message, state: FSMContext):
         sources=evaluation.get("sources") or [],
     )
 
-    text = f"{t('exam_score', lang, n=score)}\n\n{feedback}\n\n"
+    text = f"{t('exam_score', lang, n=score)}\n\n{html.escape(feedback)}\n\n"
 
     text += await _format_mistakes(find_mistakes(user_answer_text), lang)
 
     if strengths:
         text += t("exam_strengths", lang) + "\n"
         for s in strengths:
-            text += f"  • {s}\n"
+            text += f"  • {html.escape(s)}\n"
 
     if weaknesses:
         text += f"\n{t('exam_weaknesses', lang)}\n"
         for w in weaknesses:
-            text += f"  • {w}\n"
+            text += f"  • {html.escape(w)}\n"
 
     example = evaluation.get("example_answer", "")
     if example:
         example = await _translate_if_needed(example, lang)
-        text += f"\n{t('exam_example', lang, text=example)}\n"
+        text += f"\n{t('exam_example', lang, text=html.escape(example))}\n"
 
     source = evaluation.get("source", "")
     if source:
-        text += f"\n{t('exam_source', lang, text=source)}\n"
+        text += f"\n{t('exam_source', lang, text=html.escape(source))}\n"
 
     # реальные ссылки из базы знаний (не свободный текст LLM)
     for src in (evaluation.get("sources") or [])[:2]:

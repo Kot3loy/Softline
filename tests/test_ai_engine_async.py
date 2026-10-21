@@ -211,7 +211,8 @@ async def test_evaluate_answer_clamps_score_below(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_evaluate_answer_escapes_html_in_feedback(monkeypatch):
+async def test_evaluate_answer_keeps_feedback_raw(monkeypatch):
+    """Оценка хранит сырой текст: экранирование делается на рендере (чат/PDF)"""
     payload = json.dumps(
         {"score": 8, "feedback": "ok <b>bold</b> & more"}, ensure_ascii=False
     )
@@ -219,11 +220,7 @@ async def test_evaluate_answer_escapes_html_in_feedback(monkeypatch):
 
     result = await evaluate_answer("ответ", {"situation": "s", "question": "q"})
 
-    fb = result["feedback"]
-    assert "<b>" not in fb
-    assert "&lt;b&gt;" in fb
-    assert "&amp;" in fb
-    assert "&gt;" in fb
+    assert result["feedback"] == "ok <b>bold</b> & more"
 
 
 @pytest.mark.asyncio

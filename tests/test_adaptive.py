@@ -72,6 +72,31 @@ def test_get_recommendations(tmp_errors_file):
     assert len(recs) > 0
 
 
+def test_concurrent_record_error_keeps_all_writes(tmp_errors_file, monkeypatch):
+    """Параллельные ответы не должны затирать ошибки друг друга"""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    import bot.core.adaptive as adaptive
+
+    original_load = adaptive._load_errors
+
+    def slow_load():
+        data = original_load()
+        time.sleep(0.02)
+        return data
+
+    monkeypatch.setattr(adaptive, "_load_errors", slow_load)
+
+    def record(i):
+        adaptive.record_error(777777, f"case_{i}", "job", 3)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(record, range(8)))
+
+    stats = adaptive.get_user_stats(777777, "job")
+    assert len(stats) == 8
+
+
 def test_get_clarifying_question(tmp_errors_file):
     """Две неудачи по кейсу — уточняющий вопрос про слабую зону"""
     test_uid = 888888895
