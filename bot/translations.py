@@ -39,6 +39,8 @@ STRINGS = {
     "about_export": {"ru": "📥 <b>/export:</b> скачай PDF-отчёт", "en": "📥 <b>/export:</b> download PDF report"},
     "about_credits": {"ru": "👨‍💻 <b>Создан для:</b> SK Kids Challenge от Softline", "en": "👨‍💻 <b>Built for:</b> SK Kids Challenge by Softline"},
     "about_tech": {"ru": "🔧 <b>Технологии:</b> Python, aiogram, GigaChat, edge-tts", "en": "🔧 <b>Tech:</b> Python, aiogram, GigaChat, edge-tts"},
+    "version_title": {"ru": "🛠 <b>Версия</b>", "en": "🛠 <b>Version</b>"},
+    "version_build": {"ru": "Сборка: {version}", "en": "Build: {version}"},
     "about_disclaimer": {
         "ru": "⚠️ <b>Дисклеймер:</b> рекомендации носят информационный характер и не заменяют "
               "официальные требования вузов и работодателей. Всегда проверяйте актуальную информацию на официальных сайтах.\n"

@@ -11,6 +11,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot.translations import t
 from bot.utils.keyboards import main_menu_kb, scenario_info_kb, settings_kb, progress_kb, back_to_menu_kb
+from bot.utils.version import get_version_block
 from bot.utils.lang import get_lang, KNOWN_BUTTONS
 from bot.utils.plural import noun
 from bot.utils.voice import text_to_speech
@@ -34,7 +35,7 @@ def _forget(chat_id: int):
     _last_msg.pop(chat_id, None)
 
 
-def _about_text(lang: str, include_disclaimer: bool = False) -> str:
+def _about_text(lang: str, include_disclaimer: bool = False, version_block: str = "") -> str:
     # собрать текст раздела «О боте»
     parts = [
         t("about_header", lang),
@@ -50,9 +51,17 @@ def _about_text(lang: str, include_disclaimer: bool = False) -> str:
         t("about_credits", lang),
         t("about_tech", lang),
     ]
+    if version_block:
+        parts.append(version_block)
     if include_disclaimer:
         parts.append(t("about_disclaimer", lang))
     return "\n\n".join(parts)
+
+
+async def _about_text_async(lang: str, include_disclaimer: bool = False) -> str:
+    # «О боте» + версия сборки: видно, какой коммит задеплоен
+    version_block = await get_version_block(lang)
+    return _about_text(lang, include_disclaimer=include_disclaimer, version_block=version_block)
 
 
 async def _show_screen(msg: Message, text: str, kb=None, parse_mode: str = "HTML"):
@@ -102,7 +111,7 @@ async def cmd_help(msg: Message):
     # справка и дисклеймер
     user_data = await get_or_create_user(msg.from_user.id)
     lang = get_lang(user_data)
-    about = _about_text(lang, include_disclaimer=True)
+    about = await _about_text_async(lang, include_disclaimer=True)
     await msg.answer(about, parse_mode="HTML")
 
 
@@ -188,7 +197,7 @@ async def cb_settings_about(cb: CallbackQuery):
     # о боте
     user_data = await get_or_create_user(cb.from_user.id)
     lang = get_lang(user_data)
-    await _replace_card(cb.message, _about_text(lang), kb=back_to_menu_kb(lang))
+    await _replace_card(cb.message, await _about_text_async(lang), kb=back_to_menu_kb(lang))
     await cb.answer()
 
 

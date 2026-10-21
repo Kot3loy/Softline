@@ -141,6 +141,16 @@ def clear_last_msg():
     start_mod._last_msg.clear()
 
 
+@pytest.fixture(autouse=True)
+def no_github_calls(monkeypatch):
+    """Не ходим в GitHub API из тестов, кэш версии сбрасываем"""
+    import bot.utils.version as version_mod
+    version_mod.reset_cache()
+    monkeypatch.setattr(version_mod, "_fetch_commit_date", AsyncMock(return_value=None))
+    yield
+    version_mod.reset_cache()
+
+
 @pytest.fixture
 def mock_message():
     """Mock aiogram Message"""
