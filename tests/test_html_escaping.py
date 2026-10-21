@@ -11,19 +11,53 @@ UID = 987654
 
 
 @pytest.mark.asyncio
-async def test_info_answer_with_html_chars_is_escaped(test_db, mock_message):
+async def test_info_answer_keeps_source_markup(test_db, mock_message):
+    """Тело ответа экранировано, а блок источников остаётся HTML-ссылками"""
     mock_message.text = "какой вуз выбрать?"
     state = AsyncMock()
     state.get_data.return_value = {"scenario": "university"}
+    ready = (
+        "ЗП &lt; 100К &amp; R&amp;D\n\n"
+        "📚 <b>Источники</b>\n"
+        '• <a href="https://rabota.x5.ru/">X5 Group</a> — rabota.x5.ru'
+    )
 
-    with patch.object(info, "answer_info_question", AsyncMock(return_value="ЗП < 100К & R&D")), \
+    with patch.object(info, "answer_info_question", AsyncMock(return_value=ready)), \
             patch.object(info, "get_or_create_user", AsyncMock(return_value={"language": "ru", "voice_enabled": 0})):
         await info.handle_text_message(mock_message, state)
 
     text = mock_message.answer.await_args.args[0]
     assert "&lt; 100К" in text
-    assert "&amp; R&amp;D" in text
+    assert '<b>Источники</b>' in text
+    assert '<a href="https://rabota.x5.ru/">X5 Group</a>' in text
+    assert "&lt;a href" not in text
 
+
+@pytest.mark.asyncio
+async def test_answer_info_escapes_only_ai_text(monkeypatch):
+    """Экранируется только текст GigaChat, источники остаются разметкой"""
+    from types import SimpleNamespace
+
+    import bot.core.scenarios as scenarios
+
+    doc = SimpleNamespace(
+        metadata={"source_url": "https://rabota.x5.ru/", "title": "X5 Group"},
+        page_content="стажировки",
+    )
+    monkeypatch.setattr(scenarios, "search", lambda *args, **kwargs: [doc])
+    monkeypatch.setattr(
+        scenarios,
+        "ask_ai",
+        AsyncMock(return_value="Стажировки в X5: ЗП < 100К & R&D. Требования: Python и SQL, "
+                               "портфолио из двух проектов, готовность к интервью."),
+    )
+
+    answer = await scenarios.answer_info_question("стажировки?", "job")
+
+    assert "&lt; 100К" in answer
+    assert "&amp; R&amp;D" in answer
+    assert '<a href="https://rabota.x5.ru/">X5 Group</a>' in answer
+    assert "&lt;a href" not in answer
 
 @pytest.mark.asyncio
 async def test_open_exam_feedback_with_html_chars_is_escaped(test_db, mock_message):

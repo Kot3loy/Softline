@@ -172,17 +172,15 @@ async def handle_voice(msg: Message, state: FSMContext):
 
         from bot.handlers.info import _should_show_disclaimer
         disclaimer = t("disclaimer", lang) if _should_show_disclaimer(answer) else ""
-        # текст от llm уходит в parse_mode=HTML: экранируем спецсимволы
-        safe_answer = html.escape(answer)
 
         # озвучка только если юзер сам включил голосовые ответы
         voice_enabled = user_data.get("voice_enabled", 0) == 1
-        voice_file = await text_to_speech(answer) if voice_enabled else None
+        voice_file = await text_to_speech(html.unescape(answer)) if voice_enabled else None
 
         if voice_file:
             try:
                 await msg.answer_voice(FSInputFile(voice_file))
-                sent = await msg.answer(t("voice_text_prefix", lang, text=safe_answer) + disclaimer, parse_mode="HTML")
+                sent = await msg.answer(t("voice_text_prefix", lang, text=answer) + disclaimer, parse_mode="HTML")
                 try:
                     from bot.handlers.start import _remember
                     _remember(msg.chat.id, getattr(sent, "message_id", None))
@@ -192,7 +190,7 @@ async def handle_voice(msg: Message, state: FSMContext):
                 if os.path.exists(voice_file):
                     os.remove(voice_file)
         else:
-            sent = await msg.answer(safe_answer + disclaimer, parse_mode="HTML")
+            sent = await msg.answer(answer + disclaimer, parse_mode="HTML")
             try:
                 from bot.handlers.start import _remember
                 _remember(msg.chat.id, getattr(sent, "message_id", None))

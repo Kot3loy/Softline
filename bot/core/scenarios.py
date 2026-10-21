@@ -142,15 +142,18 @@ async def answer_info_question(question: str, scenario: str, user_id: int = None
 
     answer = await ask_ai(prompt, system, max_tokens=700, strip_md=True)
 
-    # сохраняю пару вопрос-ответ в память сессии
+    # сохраняю пару вопрос-ответ в память сессии (сырой текст, без сущностей)
     if user_id:
         await save_turn(user_id, question, answer)
 
+    # текст от llm уходит в parse_mode=HTML: экранируем тело, разметку источников клеим после
+    safe_answer = html.escape(answer)
+
     # ссылки на источники — только для содержательного ответа, не для отказов
     if docs and len(answer) >= 80 and not _is_refusal(answer):
-        answer += _format_sources(docs, lang)
+        safe_answer += _format_sources(docs, lang)
 
-    return answer
+    return safe_answer
 
 
 async def get_welcome_message(scenario: str, lang: str = "ru") -> str:
