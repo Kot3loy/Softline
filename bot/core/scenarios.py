@@ -18,7 +18,6 @@ _SCENARIO_TOPICS = {
     "university": "выбор вуза, поступление, ЕГЭ, студенческая жизнь",
     "job": "поиск работы, резюме, собеседования, стажировки, карьера",
     "adaptation": "адаптация на новой работе, коллеги, рабочий этикет",
-    "lead": "лидерство, управление командой, принятие решений, стратегическое мышление",
 }
 
 # какие разделы базы знаний релевантны каждому сценарию
@@ -26,7 +25,6 @@ _SCENARIO_SOURCE_TYPES = {
     "university": ["universities", "interviews"],
     "job": ["companies", "interviews"],
     "adaptation": ["companies", "interviews"],
-    "lead": ["lead"],
 }
 
 # маркеры «вопрос не по моей теме» — источники к такому ответу не клеим
@@ -83,7 +81,6 @@ async def _get_system_prompts():
         "university": await _get_prompt("university"),
         "job": await _get_prompt("job"),
         "adaptation": await _get_prompt("adaptation"),
-        "lead": await _get_prompt("lead"),
     }
 
 
@@ -199,7 +196,7 @@ def _load_prompts_sync():
         
         prompts = data.get("prompts", {})
         SYSTEM_PROMPTS = {}
-        for name in ("university", "job", "adaptation", "lead"):
+        for name in ("university", "job", "adaptation"):
             prompt_data = prompts.get(name, {}).get("versions", [])
             if prompt_data:
                 SYSTEM_PROMPTS[name] = prompt_data[0].get("content", "")

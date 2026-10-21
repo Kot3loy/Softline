@@ -41,7 +41,7 @@ def _load_documents() -> list:
         logger.warning(f"Папка данных не найдена: {data_dir}")
         return []
 
-    for subdir in ["universities", "companies", "interviews", "cases", "lead"]:
+    for subdir in ["universities", "companies", "interviews", "cases"]:
         subdir_path = data_dir / subdir
         if not subdir_path.exists():
             continue

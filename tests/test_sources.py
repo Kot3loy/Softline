@@ -69,10 +69,10 @@ def test_format_sources_escapes_html():
 
 # --- релевантность: фильтр по сценарию ---
 
-def test_scenario_source_types_do_not_mix_lead_and_university():
+def test_scenario_source_types_match_menu_scenarios():
+    assert set(_SCENARIO_SOURCE_TYPES) == {"university", "job", "adaptation"}
     assert "lead" not in _SCENARIO_SOURCE_TYPES["university"]
     assert "lead" not in _SCENARIO_SOURCE_TYPES["job"]
-    assert _SCENARIO_SOURCE_TYPES["lead"] == ["lead"]
 
 
 @pytest.mark.asyncio
