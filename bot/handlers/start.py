@@ -48,7 +48,6 @@ def _about_text(lang: str, include_disclaimer: bool = False, version_block: str 
         t("about_settings", lang),
         t("about_progress", lang),
         t("about_export", lang),
-        t("about_credits", lang),
         t("about_tech", lang),
     ]
     if version_block:
